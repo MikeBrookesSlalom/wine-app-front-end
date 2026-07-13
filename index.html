@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en-GB">
 <head>
@@ -147,6 +148,9 @@ const WINES = [
 ["Oyster Bay Chardonnay","Oyster Bay","Chardonnay","Marlborough","New Zealand","white"],
 ["Oyster Bay Pinot Noir","Oyster Bay","Pinot Noir","Marlborough","New Zealand","red"],
 ["Whispering Angel","Château d'Esclans","Grenache blend","Côtes de Provence","France","rosé"],
+["Whispering Angel Limited Edition 2025","Château d'Esclans","Grenache blend","Côtes de Provence","France","rosé"],
+["Pure Mirabeau","Mirabeau","Grenache blend","Côtes de Provence","France","rosé"],
+["Roseblood Provence","Château La Mascaronne","Grenache blend","Côtes de Provence","France","rosé"],
 ["Cloudy Bay Sauvignon Blanc","Cloudy Bay","Sauvignon Blanc","Marlborough","New Zealand","white"],
 ["Villa Maria Private Bin Sauvignon Blanc","Villa Maria","Sauvignon Blanc","Marlborough","New Zealand","white"],
 ["19 Crimes Red Blend","19 Crimes","Shiraz blend","South Eastern Australia","Australia","red"],
@@ -199,6 +203,26 @@ function persist(s){ state = s; saveState(s); }
 
 const gbp = n => (typeof n === "number" && !isNaN(n)) ? "£" + n.toFixed(2) : "—";
 
+// pull a usable price out of an offer string like "£17.50 Clubcard" or "2 for £36"
+function offerPrice(p){
+  if(!p || typeof p.offer !== "string" || !p.offer) return null;
+  const o = p.offer;
+  // multibuy: "2 for £36" -> per-unit
+  let m = o.match(/(\d+)\s*for\s*£\s*([\d.]+)/i);
+  if(m){ const n = parseInt(m[1],10), tot = parseFloat(m[2]); if(n>0 && tot>0) return +(tot/n).toFixed(2); }
+  // member/single price: "£17.50 Clubcard"
+  m = o.match(/£\s*([\d.]+)/);
+  if(m){ const v = parseFloat(m[1]); if(v>0) return v; }
+  return null;
+}
+
+// the cheapest achievable price at a retailer (shelf price or a lower offer price)
+function effectivePrice(p){
+  const base = (typeof p.price === "number" && !isNaN(p.price)) ? p.price : Infinity;
+  const op = offerPrice(p);
+  return (op != null && op < base) ? op : base;
+}
+
 function daysAgo(iso){ return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
 
 function ageLabel(iso){
@@ -209,10 +233,14 @@ function ageLabel(iso){
 }
 
 function bestOf(w){
-  const entries = (w.prices || []).filter(p => typeof p.price === "number");
+  const entries = (w.prices || []).filter(p => p.stocked && typeof p.price === "number");
   if(!entries.length) return null;
-  entries.sort((a,b) => a.price - b.price);
-  return entries[0];
+  let best = null, bestEff = Infinity;
+  for(const p of entries){
+    const eff = effectivePrice(p);
+    if(eff < bestEff){ bestEff = eff; best = { ...p, effPrice: eff, discounted: eff < p.price }; }
+  }
+  return best;
 }
 
 function showView(v){
@@ -380,7 +408,7 @@ function render(){
         <h2 class="wname">${w.name}</h2>
         <div class="wmeta">${[w.producer,w.grape,w.region,w.country].filter(Boolean).join(" · ") || "Added manually"}</div>
       </div>
-      ${best ? `<div class="besttag"><span class="bestlabel">Best price</span><span class="bestval">${gbp(best.price)} <small>at ${best.retailer}</small></span></div>` : ""}
+      ${best ? `<div class="besttag"><span class="bestlabel">Best price</span><span class="bestval">${gbp(best.effPrice)} <small>at ${best.retailer}${best.discounted ? " · with offer" : ""}</small></span></div>` : ""}
       <div class="ledger">${rows}</div>
       <div class="cardfoot">
         <span>Last checked: ${w.checkedAt ? ageLabel(w.checkedAt) : "never"}</span>
