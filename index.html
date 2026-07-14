@@ -88,13 +88,43 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 .manual{display:block;width:100%;background:transparent;border:1px dashed rgba(245,237,221,.4);color:var(--cream-dim);border-radius:8px;padding:12px 14px;font-size:14px;margin-top:4px}
 .footnote{font-size:12px;color:var(--cream-dim);line-height:1.55;margin-top:4px;opacity:.8}
 .hidden{display:none}
+
+/* Swipeable pager */
+#pager{max-width:460px;margin:0 auto;position:relative;overflow-x:hidden}
+.tabbar{display:flex;gap:6px;padding:14px 16px 0;max-width:460px;margin:0 auto}
+.tabbtn{flex:1;background:transparent;border:1px solid rgba(245,237,221,.25);color:var(--cream-dim);
+  border-radius:10px;padding:10px 8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s ease}
+.tabbtn.active{background:rgba(217,164,65,.16);border-color:var(--brass);color:var(--brass)}
+.pages{display:flex;width:200%;transition:transform .32s cubic-bezier(.4,0,.2,1)}
+.page{width:50%;flex-shrink:0;box-sizing:border-box}
+
+/* Monthly picks */
+.msection{margin-bottom:22px}
+.mheading{font-family:'Fraunces',serif;font-size:18px;font-weight:600;color:var(--brass);
+  margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid rgba(245,237,221,.15)}
+.mrow{background:var(--cream);color:var(--ink);border-radius:4px;padding:12px 14px;margin-bottom:8px}
+.mrowtop{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.mname{font-family:'Fraunces',serif;font-weight:600;font-size:15.5px;color:var(--ink);text-decoration:none;flex:1;min-width:0}
+.mtag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;border-radius:4px;padding:2px 6px;flex-shrink:0}
+.mrowbottom{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.mmeta{font-size:11.5px;color:var(--meta)}
+.mtrack{background:transparent;border:1px solid rgba(42,18,25,.25);color:#8A4B2F;font-weight:600;
+  font-size:11.5px;border-radius:6px;padding:5px 9px;cursor:pointer}
+.mtrack:active{background:rgba(217,164,65,.18)}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(245,237,221,.3);border-top-color:var(--brass);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .error{background:rgba(180,70,58,.2);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:10px;margin:10px 0;font-size:13px}
 </style>
 </head>
 <body>
-<div class="frame">
+<div id="pager">
+  <div class="tabbar">
+    <button class="tabbtn active" id="tabBtn0" onclick="gotoPage(0)">My Cellar</button>
+    <button class="tabbtn" id="tabBtn1" onclick="gotoPage(1)">This Month's Picks</button>
+  </div>
+  <div class="pages" id="pages">
+    <div class="page">
+    <div class="frame">
   <header>
     <div class="eyebrow">UK supermarket tracker · v6.2 · self-hosted</div>
     <h1>Cellar Price Watch</h1>
@@ -126,9 +156,129 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
     <div id="matches"></div>
     <button class="btn" style="width:100%;margin-top:20px" onclick="showView('list')">Back to my wines</button>
   </main>
+    </div>
+    </div>
+    <div class="page">
+    <div class="frame">
+  <header>
+    <div class="eyebrow">MONTHLY PICKS · via Luke Flunder</div>
+    <h1 id="monthlyTitle">This Month's Picks</h1>
+    <div class="hmeta" id="monthlyMeta"></div>
+  </header>
+  <main id="monthlyView">
+    <div class="empty"><div class="glyph">◍</div><p>Loading this month's picks…</p></div>
+  </main>
+</div>
+</div>
+  </div>
 </div>
 
 <script>
+const MONTHLY_SOURCE_URL = "https://lukeflunder.substack.com/p/the-list";
+const MONTHLY_CACHE_KEY = "cellar:monthlyPicks:v1";
+const MONTHLY_CACHE_TTL = 12 * 60 * 60 * 1000; // 12h client-side cache
+
+let activePage = 0;
+function gotoPage(i){
+  activePage = i;
+  document.getElementById("pages").style.transform = `translateX(-${i * 50}%)`;
+  document.getElementById("tabBtn0").classList.toggle("active", i === 0);
+  document.getElementById("tabBtn1").classList.toggle("active", i === 1);
+  if(i === 1) loadMonthlyPicks();
+}
+
+// swipe: passive listeners only, computed on release — never blocks scrolling, dragging, or taps
+(function attachPagerSwipe(){
+  const pager = document.getElementById("pager");
+  let sx = 0, sy = 0, st = 0;
+  pager.addEventListener("touchstart", e => {
+    const t = e.touches[0];
+    sx = t.clientX; sy = t.clientY; st = Date.now();
+  }, { passive: true });
+  pager.addEventListener("touchend", e => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy, dt = Date.now() - st;
+    if(Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 700){
+      if(dx < 0 && activePage === 0) gotoPage(1);
+      else if(dx > 0 && activePage === 1) gotoPage(0);
+    }
+  }, { passive: true });
+})();
+
+const MONTHLY_STYLE_META = {
+  "S": { label: "Sparkling", dot: "#D9A441" },
+  "W": { label: "White", dot: "#CDBFA4" },
+  "R": { label: "Red", dot: "#8A1F2B" },
+  "Ro":{ label: "Rosé", dot: "#D98A8A" },
+};
+const MONTHLY_TAG_META = {
+  "NEW": { bg: "#2A1219", fg: "#F5EDDD" },
+  "STAR PICK": { bg: "#D9A441", fg: "#2A1219" },
+  "TOP PICK": { bg: "#D9A441", fg: "#2A1219" },
+  "PRICE DROP": { bg: "#B0463A", fg: "#F5EDDD" },
+};
+const MONTHLY_OFFER_LABEL = { CC: "Clubcard", NP: "Nectar", MC: "More Card", AR: "Rollback" };
+
+async function loadMonthlyPicks(force){
+  const view = document.getElementById("monthlyView");
+  const cachedRaw = !force && localStorage.getItem(MONTHLY_CACHE_KEY);
+  if(cachedRaw){
+    try {
+      const cached = JSON.parse(cachedRaw);
+      if(Date.now() - cached.at < MONTHLY_CACHE_TTL){
+        renderMonthlyPicks(cached.data);
+        return;
+      }
+    } catch(e){}
+  }
+
+  view.innerHTML = `<div class="empty"><div class="glyph">◍</div><p>Fetching this month's picks…</p></div>`;
+  try {
+    const url = (localStorage.getItem("backendUrl") || DEFAULT_BACKEND).trim();
+    const res = await fetch(url + "/wine-list");
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    localStorage.setItem(MONTHLY_CACHE_KEY, JSON.stringify({ data, at: Date.now() }));
+    renderMonthlyPicks(data);
+  } catch(e){
+    view.innerHTML = `<div class="error">Couldn't load this month's picks (${e.message}). <a href="${MONTHLY_SOURCE_URL}" target="_blank" style="color:inherit;text-decoration:underline">View directly on Substack ↗</a></div>`;
+  }
+}
+
+function renderMonthlyPicks(data){
+  document.getElementById("monthlyMeta").textContent = data.month ? data.month : "";
+  const view = document.getElementById("monthlyView");
+
+  if(!data.sections || !data.sections.length){
+    view.innerHTML = `<div class="empty"><p>No picks found this time. <a href="${MONTHLY_SOURCE_URL}" target="_blank" style="color:var(--brass)">Check the source ↗</a></p></div>`;
+    return;
+  }
+
+  view.innerHTML = data.sections.map(section => {
+    const rows = section.wines.map(w => {
+      const styleMeta = MONTHLY_STYLE_META[w.style] || { label: "", dot: "#8A7A66" };
+      const tagMeta = w.tag ? (MONTHLY_TAG_META[w.tag] || { bg: "#8A7A66", fg: "#fff" }) : null;
+      const offerLabel = w.offerCode ? MONTHLY_OFFER_LABEL[w.offerCode] || w.offerCode : null;
+      const encoded = btoa(JSON.stringify({ name: w.name, producer:"", grape:"", region:"", country:"", style: (styleMeta.label||"").toLowerCase() }));
+      return `<div class="mrow">
+        <div class="mrowtop">
+          <span class="dot" style="background:${styleMeta.dot}"></span>
+          <a href="${w.url}" target="_blank" class="mname">${w.name}</a>
+          ${tagMeta ? `<span class="mtag" style="background:${tagMeta.bg};color:${tagMeta.fg}">${w.tag}</span>` : ""}
+        </div>
+        <div class="mrowbottom">
+          <span class="mmeta">${[styleMeta.label, offerLabel].filter(Boolean).join(" · ")}</span>
+          <button class="mtrack" onclick="addWineFromEncoded('${encoded}'); gotoPage(0)">+ Track this</button>
+        </div>
+      </div>`;
+    }).join("");
+    return `<section class="msection">
+      <h3 class="mheading">${section.retailer}</h3>
+      ${rows}
+    </section>`;
+  }).join("") + `<p class="footnote">Curated monthly by <a href="${MONTHLY_SOURCE_URL}" target="_blank" style="color:var(--brass)">Luke Flunder on Substack ↗</a> — tap a wine to see it on the retailer's site, or read his full tasting notes at the source. "+ Track this" adds it to My Cellar for price checking.</p>`;
+}
+
 const STORAGE_KEY = "cellar:v62";
 const RETAILER_META = {
   "Tesco":       { dot:"#00539F", url:q=>`https://www.tesco.com/groceries/en-GB/search?query=${encodeURIComponent(q)}` },
