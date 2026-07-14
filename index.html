@@ -174,6 +174,18 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 </div>
 
 <script>
+// btoa/atob only support Latin-1 — wine names with curly quotes, em-dashes,
+// or Eastern European letters (ă, ș, etc.) break them. These wrap the string
+// through UTF-8 bytes first so any Unicode text encodes/decodes safely.
+function b64EncodeUnicode(str){
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
+    (_, hex) => String.fromCharCode(parseInt(hex, 16))));
+}
+function b64DecodeUnicode(str){
+  return decodeURIComponent(Array.prototype.map.call(atob(str),
+    c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join(""));
+}
+
 const MONTHLY_SOURCE_URL = "https://lukeflunder.substack.com/p/the-list";
 const MONTHLY_CACHE_KEY = "cellar:monthlyPicks:v1";
 const MONTHLY_CACHE_TTL = 12 * 60 * 60 * 1000; // 12h client-side cache
@@ -259,7 +271,7 @@ function renderMonthlyPicks(data){
       const styleMeta = MONTHLY_STYLE_META[w.style] || { label: "", dot: "#8A7A66" };
       const tagMeta = w.tag ? (MONTHLY_TAG_META[w.tag] || { bg: "#8A7A66", fg: "#fff" }) : null;
       const offerLabel = w.offerCode ? MONTHLY_OFFER_LABEL[w.offerCode] || w.offerCode : null;
-      const encoded = btoa(JSON.stringify({ name: w.name, producer:"", grape:"", region:"", country:"", style: (styleMeta.label||"").toLowerCase() }));
+      const encoded = b64EncodeUnicode(JSON.stringify({ name: w.name, producer:"", grape:"", region:"", country:"", style: (styleMeta.label||"").toLowerCase() }));
       return `<div class="mrow">
         <div class="mrowtop">
           <span class="dot" style="background:${styleMeta.dot}"></span>
@@ -613,7 +625,7 @@ function renderMatches(q){
     }).slice(0, 8);
     html += hits.map((w,i) => {
       const wine = {name:w[0],producer:w[1],grape:w[2],region:w[3],country:w[4],style:w[5]};
-      const encoded = btoa(JSON.stringify(wine));
+      const encoded = b64EncodeUnicode(JSON.stringify(wine));
       return `
       <button class="match" onclick="addWineFromEncoded('${encoded}')">
         <span class="mn">${w[0]}</span>
@@ -629,7 +641,7 @@ document.getElementById("q").addEventListener("input", e => renderMatches(e.targ
 
 function addWineFromEncoded(encoded){
   try {
-    const w = JSON.parse(atob(encoded));
+    const w = JSON.parse(b64DecodeUnicode(encoded));
     addWine(w);
   } catch(e) {
     console.error("Failed to decode wine:", e);
