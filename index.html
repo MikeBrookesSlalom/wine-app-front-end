@@ -373,20 +373,33 @@ function attachReorder(){
     if(e && e.cancelable) e.preventDefault(); // this is what keeps the drag alive
     card.style.transform = `translateY(${clientY - startY}px) scale(1.02)`;
 
-    // swap with whichever card our midpoint is now over
+    // Only swap with the immediate neighbour, once our card's center passes
+    // that neighbour's midpoint — needs about half a card's height of movement,
+    // not a full card's height.
     const rect = card.getBoundingClientRect();
-    const mid = rect.top + rect.height / 2;
-    for(const other of container.querySelectorAll(".card")){
-      if(other === card) continue;
-      const r = other.getBoundingClientRect();
-      if(mid > r.top && mid < r.bottom){
-        const oMid = r.top + r.height / 2;
-        if(mid < oMid) container.insertBefore(card, other);
-        else container.insertBefore(card, other.nextSibling);
-        // card has jumped to its new slot: re-baseline so it stays under the finger
+    const cardMid = rect.top + rect.height / 2;
+
+    let next = card.nextElementSibling;
+    while(next && !next.classList.contains("card")) next = next.nextElementSibling;
+    if(next){
+      const r = next.getBoundingClientRect();
+      if(cardMid > r.top + r.height / 2){
+        container.insertBefore(next, card); // card effectively moves down past it
         startY = clientY;
         card.style.transform = "translateY(0px) scale(1.02)";
-        break;
+        return;
+      }
+    }
+
+    let prev = card.previousElementSibling;
+    while(prev && !prev.classList.contains("card")) prev = prev.previousElementSibling;
+    if(prev){
+      const r = prev.getBoundingClientRect();
+      if(cardMid < r.top + r.height / 2){
+        container.insertBefore(card, prev);
+        startY = clientY;
+        card.style.transform = "translateY(0px) scale(1.02)";
+        return;
       }
     }
   };
