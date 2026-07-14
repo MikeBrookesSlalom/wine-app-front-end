@@ -308,10 +308,10 @@ function renderMonthlyPicks(data){
       </div>`;
     }).join("");
     return `<section class="msection">
-      <h3 class="mheading">${section.retailer}</h3>
+      <h3 class="mheading">${section.sourceUrl ? `<a href="${section.sourceUrl}" target="_blank" style="color:inherit;text-decoration:none">${section.retailer} <span style="font-size:12px;font-weight:500;color:var(--cream-dim);vertical-align:middle">— read Luke's notes ↗</span></a>` : section.retailer}</h3>
       ${rows}
     </section>`;
-  }).join("") + `<p class="footnote">Curated monthly by <a href="${MONTHLY_SOURCE_URL}" target="_blank" style="color:var(--brass)">Luke Flunder on Substack ↗</a> — tap a wine to see it on the retailer's site, or read his full tasting notes at the source. "+ Track this" adds it to My Cellar for price checking.</p>`;
+  }).join("") + `<p class="footnote">Curated monthly by <a href="${MONTHLY_SOURCE_URL}" target="_blank" style="color:var(--brass)">Luke Flunder on Substack ↗</a>. Tap a section heading to jump straight to his write-up for those wines — his actual tasting notes live there, not here. "+ Track this" adds a wine to My Cellar for price checking.</p>`;
 }
 
 const STORAGE_KEY = "cellar:v62";
