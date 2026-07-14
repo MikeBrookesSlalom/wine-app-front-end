@@ -38,9 +38,15 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 .btn.active{border-color:var(--brass);color:var(--brass)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .card{position:relative;background:var(--cream);color:var(--ink);border-radius:4px;padding:18px 16px 14px;margin-bottom:16px;
-  box-shadow:0 10px 24px rgba(0,0,0,.35);border-top:5px solid var(--brass);animation:rise .35s ease both}
+  box-shadow:0 10px 24px rgba(0,0,0,.35);border-top:5px solid var(--brass);animation:rise .35s ease both;
+  touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  transition:opacity .25s ease, transform .2s ease, box-shadow .2s ease}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.card{animation:none}}
+.card.dragging{opacity:.92;transform:scale(1.03);box-shadow:0 20px 46px rgba(0,0,0,.55);z-index:20;cursor:grabbing;animation:none}
+.card.removing{opacity:0;transform:translateX(48px) scale(.96);box-shadow:none;pointer-events:none}
+.card .draghint{position:absolute;top:10px;left:12px;font-size:15px;color:#B7A98C;letter-spacing:1px;line-height:1;display:none}
+.editing .draghint{display:block}
 .remove{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:50%;border:1px solid var(--red);
   background:transparent;color:var(--red);font-size:18px;line-height:26px;display:none}
 .editing .remove{display:block}
@@ -306,7 +312,71 @@ function addManual(){
 }
 
 function removeWine(id){
-  persist({ wines: state.wines.filter(w => w.id !== id) });
+  const card = document.querySelector(`#listView .card[data-id="${id}"]`);
+  const commit = () => { persist({ wines: state.wines.filter(w => w.id !== id) }); render(); };
+  if(card){
+    card.classList.add("removing");
+    setTimeout(commit, 260);
+  } else {
+    commit();
+  }
+}
+
+// Long-press drag-to-reorder (touch + mouse via Pointer Events)
+function attachReorder(){
+  const container = document.getElementById("listView");
+  if(!container) return;
+  container.querySelectorAll(".card").forEach(card => {
+    let holdTimer = null, dragging = false, startY = 0, pid = null;
+
+    const cleanup = () => {
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+      if(dragging){
+        dragging = false;
+        card.classList.remove("dragging");
+        try { card.releasePointerCapture(pid); } catch(_){}
+        // rebuild wine order from the DOM
+        const ids = [...container.querySelectorAll(".card")].map(c => c.dataset.id);
+        const reordered = ids.map(id => state.wines.find(w => w.id === id)).filter(Boolean);
+        state.wines.forEach(w => { if(!reordered.includes(w)) reordered.push(w); });
+        persist({ ...state, wines: reordered });
+        render();
+      }
+    };
+
+    card.addEventListener("pointerdown", e => {
+      if(e.target.closest(".remove, a, button")) return; // don't hijack buttons/links
+      startY = e.clientY;
+      pid = e.pointerId;
+      holdTimer = setTimeout(() => {
+        dragging = true;
+        card.classList.add("dragging");
+        try { card.setPointerCapture(pid); } catch(_){}
+        if(navigator.vibrate) navigator.vibrate(15);
+      }, 320);
+    });
+
+    card.addEventListener("pointermove", e => {
+      if(!dragging){
+        // moved before long-press fired -> treat as scroll, cancel the hold
+        if(holdTimer && Math.abs(e.clientY - startY) > 8){ clearTimeout(holdTimer); holdTimer = null; }
+        return;
+      }
+      e.preventDefault();
+      const others = [...container.querySelectorAll(".card:not(.dragging)")];
+      const after = others.find(o => {
+        const r = o.getBoundingClientRect();
+        return e.clientY < r.top + r.height / 2;
+      });
+      const foot = container.querySelector(".footnote");
+      if(after) container.insertBefore(card, after);
+      else if(foot) container.insertBefore(card, foot);
+      else container.appendChild(card);
+    });
+
+    card.addEventListener("pointerup", cleanup);
+    card.addEventListener("pointercancel", cleanup);
+  });
 }
 
 async function checkAllPrices(){
@@ -402,7 +472,8 @@ function render(){
       }).join("");
     }
 
-    return `<article class="card${editMode ? " editing" : ""}">
+    return `<article class="card${editMode ? " editing" : ""}" data-id="${w.id}">
+      <span class="draghint">⠿</span>
       <button class="remove" onclick="removeWine('${w.id}')">×</button>
       <div class="wtop">
         <h2 class="wname">${w.name}</h2>
@@ -418,7 +489,9 @@ function render(){
         </span>
       </div>
     </article>`;
-  }).join("") + `<p class="footnote">Live prices via Trolley.co.uk — shows the supermarkets Trolley lists for each wine (often the cheapest available). Tap a store to open its live search. Greyed after 7 days.</p>`;
+  }).join("") + `<p class="footnote">Live prices via Trolley.co.uk — shows the supermarkets Trolley lists for each wine (often the cheapest available). Tap a store to open its live search. Greyed after 7 days.${state.wines.length > 1 ? " Tap and hold a card to drag it into a new order." : ""}</p>`;
+
+  attachReorder();
 }
 
 // Backend config UI (prefilled with the built-in default; editable via ⚙)
