@@ -257,6 +257,28 @@ async function loadMonthlyPicks(force){
   }
 }
 
+// Factual origin extraction only — country/region names, never Luke's own
+// descriptive commentary (see note on why we don't scrape his tasting notes).
+const MONTHLY_COUNTRIES = [
+  "England","Scotland","Wales","France","Spain","Italy","Portugal","Germany","Austria",
+  "Greece","Chile","Argentina","Australia","New Zealand","South Africa","USA","California",
+  "Romania","Moldova","Hungary","Georgia","Lebanon","Croatia","Slovenia","Bulgaria","Uruguay",
+  "Brazil","Canada","Japan","Israel","Morocco","Turkey",
+].sort((a,b) => b.length - a.length);
+function extractOrigin(name){
+  const parts = name.split(",").map(p => p.trim());
+  if(parts.length > 1){
+    const last = parts[parts.length - 1];
+    const hit = MONTHLY_COUNTRIES.find(c => last.toLowerCase() === c.toLowerCase());
+    if(hit) return hit;
+  }
+  for(const c of MONTHLY_COUNTRIES){
+    const re = new RegExp(`\\b${c.replace(/\s+/g, "\\s+")}\\s*$`, "i");
+    if(re.test(name)) return c;
+  }
+  return null;
+}
+
 function renderMonthlyPicks(data){
   document.getElementById("monthlyMeta").textContent = data.month ? data.month : "";
   const view = document.getElementById("monthlyView");
@@ -271,7 +293,8 @@ function renderMonthlyPicks(data){
       const styleMeta = MONTHLY_STYLE_META[w.style] || { label: "", dot: "#8A7A66" };
       const tagMeta = w.tag ? (MONTHLY_TAG_META[w.tag] || { bg: "#8A7A66", fg: "#fff" }) : null;
       const offerLabel = w.offerCode ? MONTHLY_OFFER_LABEL[w.offerCode] || w.offerCode : null;
-      const encoded = b64EncodeUnicode(JSON.stringify({ name: w.name, producer:"", grape:"", region:"", country:"", style: (styleMeta.label||"").toLowerCase() }));
+      const origin = extractOrigin(w.name);
+      const encoded = b64EncodeUnicode(JSON.stringify({ name: w.name, producer:"", grape:"", region:"", country: origin||"", style: (styleMeta.label||"").toLowerCase() }));
       return `<div class="mrow">
         <div class="mrowtop">
           <span class="dot" style="background:${styleMeta.dot}"></span>
@@ -279,7 +302,7 @@ function renderMonthlyPicks(data){
           ${tagMeta ? `<span class="mtag" style="background:${tagMeta.bg};color:${tagMeta.fg}">${w.tag}</span>` : ""}
         </div>
         <div class="mrowbottom">
-          <span class="mmeta">${[styleMeta.label, offerLabel].filter(Boolean).join(" · ")}</span>
+          <span class="mmeta">${[origin, styleMeta.label, offerLabel].filter(Boolean).join(" · ")}</span>
           <button class="mtrack" onclick="addWineFromEncoded('${encoded}'); gotoPage(0)">+ Track this</button>
         </div>
       </div>`;
