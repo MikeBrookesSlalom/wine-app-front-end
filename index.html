@@ -57,6 +57,11 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 .bestlabel{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);font-weight:600}
 .bestval{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:18px}
 .bestval small{font-family:'Work Sans',sans-serif;font-size:12.5px;color:var(--cream-dim);font-weight:500}
+.ctxbadge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+  border-radius:5px;padding:3px 8px;margin-top:8px}
+.ctxbadge.good{background:rgba(90,140,90,.18);color:#5A8C5A}
+.ctxbadge.bad{background:rgba(180,70,58,.16);color:var(--red)}
+.ctxbadge .ctxsource{font-weight:500;opacity:.75;font-size:10px}
 .ledger{border-top:1px solid rgba(42,18,25,.15)}
 .lrow{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px dotted rgba(42,18,25,.2);font-size:14.5px;gap:8px}
 .lrow.best{background:rgba(217,164,65,.14);border-radius:4px;padding:9px 8px;margin:0 -6px}
@@ -814,12 +819,13 @@ async function checkAllPrices(){
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    // Map results back — keep whatever stores the backend returned
+    // Map results back — keep whatever stores the backend returned, plus price context
     persist({
       wines: state.wines.map(w => {
-        const result = data.results[w.name];
-        if(!result) return { ...w, prices: [], checkedAt: new Date().toISOString() };
-        const keys = Object.keys(result);
+        const entry = data.results[w.name];
+        if(!entry) return { ...w, prices: [], context: null, checkedAt: new Date().toISOString() };
+        const priceMap = entry.prices || {};
+        const keys = Object.keys(priceMap);
         // order known retailers first, then any extras alphabetically
         keys.sort((a,b) => {
           const ia = RETAILER_ORDER.indexOf(a), ib = RETAILER_ORDER.indexOf(b);
@@ -828,8 +834,8 @@ async function checkAllPrices(){
           if(ib === -1) return -1;
           return ia - ib;
         });
-        const prices = keys.map(k => ({ retailer: k, ...result[k] }));
-        return { ...w, prices, checkedAt: new Date().toISOString() };
+        const prices = keys.map(k => ({ retailer: k, ...priceMap[k] }));
+        return { ...w, prices, context: entry.context || null, checkedAt: new Date().toISOString() };
       }),
     });
 
@@ -895,6 +901,7 @@ function render(){
         <div class="wmeta">${[w.producer,w.grape,w.region,w.country].filter(Boolean).join(" · ") || "Added manually"}</div>
       </div>
       ${best ? `<div class="besttag"><span class="bestlabel">Best price</span><span class="bestval">${gbp(best.effPrice)} <small>at ${best.retailer}${best.discounted ? " · with offer" : ""}</small></span></div>` : ""}
+      ${w.context ? `<div class="ctxbadge ${w.context.label.includes("Higher") ? "bad" : "good"}">${w.context.label} <span class="ctxsource">· avg ${gbp(w.context.avg)}${w.context.basis === "own" ? " from your checks" : " (est.)"}</span></div>` : ""}
       <div class="ledger">${rows}</div>
       <div class="cardfoot">
         <span>Last checked: ${w.checkedAt ? ageLabel(w.checkedAt) : "never"}</span>
