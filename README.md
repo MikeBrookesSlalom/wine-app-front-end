@@ -18,9 +18,9 @@ lib/                shared code (matching, price context, storage, list parser)
    (GitHub: Add file → Upload files, drag them in, Commit). Keep it in the **same**
    Vercel project, so the address stays the same and your saved wines carry over.
 
-2. **Add the free database.** Vercel → your project → Storage → Create database →
-   Upstash for Redis → Free plan → connect it to this project (all environments).
-   This adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically.
+2. **Storage (done).** A private Vercel Blob store, `cellar-price-watch`, is connected
+   to the project and provides `BLOB_READ_WRITE_TOKEN`. (Upstash Redis also works if you
+   ever prefer it: the code uses whichever is connected, Blob first.)
 
 3. **Add your Apify token.** Vercel → Settings → Environment Variables →
    `APIFY_TOKEN` = your token from Apify (Settings → API & Integrations).
@@ -29,15 +29,15 @@ lib/                shared code (matching, price context, storage, list parser)
 4. **Redeploy** so the new variables take effect: Deployments → ⋯ on the latest → Redeploy.
 
 5. **Check** `https://wine-app-front-end.vercel.app/api/health`. You want:
-   `{"status":"ok","apifyTokenSet":true,"storage":"upstash"}`.
-   `"storage":"memory"` means the database isn't connected yet; prices still work
+   `{"status":"ok","apifyTokenSet":true,"storage":"blob"}`.
+   `"storage":"memory"` means no storage is connected; prices still work
    but history won't be kept.
 
 6. Open the app. The header should read **v8**. Tap Check prices.
 
 ## Running costs
 
-- Vercel Hobby and Upstash free plan: £0 at this usage.
+- Vercel Hobby (functions + Blob storage): £0 at this usage.
 - Apify (Trolley scraper): roughly 6p the first time a wine is added (one search),
   then about half a penny per wine per price check. Prices are reused for 24 hours,
   so tapping Check prices repeatedly costs nothing extra.
