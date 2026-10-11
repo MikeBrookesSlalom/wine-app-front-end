@@ -3,7 +3,7 @@ import { storeKind } from "../lib/store.js";
 export default function handler(req, res) {
   res.status(200).json({
     status: "ok",
-    apifyTokenSet: !!process.env.APIFY_TOKEN,
-    storage: storeKind, // "upstash" = saved permanently; "memory" = database not connected yet
+    priceSource: "trolley.co.uk product pages (direct)",
+    storage: storeKind, // "blob" or "upstash" = saved permanently; "memory" = no storage connected
   });
 }

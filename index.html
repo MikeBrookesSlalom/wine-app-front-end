@@ -833,9 +833,18 @@ async function saveLink(id){
   }
   delete linkErrors[id];
   relinking.delete(id);
-  persist({ ...state, wines: state.wines.map(w => w.id === id ? { ...w, trolley: ref, prices: null, checkedAt: null, context: null, matchedName: null, outOfStock: false } : w) });
+  persist({ ...state, wines: state.wines.map(w => w.id === id ? { ...w, trolley: ref, alternatives: [], prices: null, checkedAt: null, context: null, matchedName: null, outOfStock: false } : w) });
   render();
   await checkPrices([id]); // check just this wine straight away so the match can be confirmed
+}
+
+async function useAlternative(id, k){
+  const w = state.wines.find(x => x.id === id);
+  const a = w && (w.alternatives || [])[k];
+  if(!a) return;
+  persist({ ...state, wines: state.wines.map(x => x.id === id ? { ...x, trolley: { sku: a.sku, url: a.url }, alternatives: [], prices: null, checkedAt: null, context: null, matchedName: null, outOfStock: false } : x) });
+  render();
+  await checkPrices([id]);
 }
 
 function checkAllPrices(){ return checkPrices(null); }
@@ -846,7 +855,7 @@ async function checkPrices(onlyIds){
   btn.disabled = true;
   status.classList.remove("error");
   status.style.display = "block";
-  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley… this can take up to a minute.';
+  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley…';
 
   try {
     const targets = state.wines.filter(w => !onlyIds || onlyIds.includes(w.id));
@@ -880,7 +889,7 @@ async function checkPrices(onlyIds){
         });
         const prices = keys.map(k => ({ retailer: k, ...priceMap[k] }));
         return { ...w, trolley, needsLink: false, checkError: null, matchedName: entry.matchedName || w.matchedName || null,
-          outOfStock: !!entry.outOfStock, prices, context: entry.context || null, checkedAt: now };
+          outOfStock: !!entry.outOfStock, alternatives: entry.alternatives || [], prices, context: entry.context || null, checkedAt: now };
       }),
     });
 
@@ -946,7 +955,10 @@ function render(){
     } else if(!w.checkedAt){
       rows = msg("Linked to Trolley · tap Check prices");
     } else if(w.outOfStock){
-      rows = msg("Out of stock at every shop Trolley tracks right now");
+      rows = msg("Out of stock at every shop Trolley tracks right now") + ((w.alternatives || []).length ? `<div class="linkbox" style="margin-top:8px">
+        <div class="lbtitle">Trolley suggests these listings instead</div>
+        ${w.alternatives.map((a, k) => `<div class="lbrow" style="align-items:center;justify-content:space-between;margin-top:6px"><span>${esc(a.name)}</span><button class="savebtn" onclick="useAlternative('${w.id}', ${k})">Use this</button></div>`).join("")}
+      </div>` : "");
     } else if(!list.length){
       rows = `<div class="lrow notfound"><span class="lright" style="width:100%;text-align:center">No supermarket price found</span></div>`;
     } else {
