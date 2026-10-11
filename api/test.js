@@ -10,6 +10,6 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: true, link, product, ms: Date.now() - started });
   } catch (e) {
     // 200 on purpose: this is a diagnostic endpoint, so make the error readable anywhere
-    res.status(200).json({ ok: false, error: e.message, ms: Date.now() - started });
+    res.status(200).json({ ok: false, error: e.message, errorParts: String(e.message).replace(/\s+/g, " ").match(/.{1,80}/g), ms: Date.now() - started });
   }
 }
