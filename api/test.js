@@ -7,6 +7,7 @@ import { parseShopLink, fetchShopPrice } from "../lib/shops.js";
 export default async function handler(req, res) {
   const started = Date.now();
   try {
+    if (req.query.shop64) req.query.shop = Buffer.from(String(req.query.shop64), "base64url").toString("utf8");
     if (req.query.shop) {
       const link = parseShopLink(req.query.shop);
       if (link.error) return res.status(200).json({ ok: false, error: link.error });
