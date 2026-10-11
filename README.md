@@ -54,11 +54,12 @@ every check and replaces Trolley's figure for that shop.
 | Shop | Works | Offers picked up |
 |---|---|---|
 | Tesco | yes | Clubcard Price |
-| Sainsbury's | yes | Nectar / promotions |
 | ASDA | yes | (price only) |
-| Waitrose, Waitrose Cellar | yes | Waitrose promotions |
+| Waitrose Cellar | yes | (price only) |
 | Ocado, Morrisons | yes | multibuys, More Card |
 | Costco | yes | (price only) |
+| Sainsbury's | no: refuses requests from cloud servers (Trolley still covers it) | |
+| Waitrose | no: never answers cloud servers (use Waitrose Cellar for wine) | |
 | Majestic, Co-op, The Whisky Exchange | no: bot walls block automated requests | |
 | Aldi, M&S | no: prices only appear in a browser | |
 

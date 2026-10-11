@@ -345,7 +345,7 @@ const RETAILER_META = {
 // preferred display order; any unknown store falls through with a grey dot
 const RETAILER_ORDER = ["Tesco","Sainsbury's","ASDA","Waitrose","Waitrose Cellar","M&S","Ocado","Morrisons","Aldi","Lidl","Co-op","Iceland","Costco","Amazon"];
 // Shops whose own product pages the app can read (one link per wine, pasted once)
-const DIRECT_SHOPS = ["Tesco","Sainsbury's","ASDA","Waitrose","Waitrose Cellar","Ocado","Morrisons","Costco"];
+const DIRECT_SHOPS = ["Tesco","ASDA","Waitrose Cellar","Ocado","Morrisons","Costco"];
 function retailerMeta(key){ return RETAILER_META[key] || { dot:"#8A7A66", url:q=>`https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}` }; }
 const trolleyUrl = q => `https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}`;
 
@@ -970,7 +970,7 @@ function shopBox(w){
       <button class="savebtn" onclick="saveShopLink('${w.id}')">Save</button>
     </div>
     ${err ? `<div class="lberr">${esc(err)}</div>` : ""}
-    <div class="matched" style="margin-top:8px">Majestic, Co-op, Aldi and M&amp;S can't be checked automatically. · <button onclick="closeShopBox('${w.id}')">Cancel</button></div>
+    <div class="matched" style="margin-top:8px">Majestic, Sainsbury's, Waitrose (use Waitrose Cellar), Co-op, Aldi and M&amp;S block automatic checks, but Trolley still covers most of them. · <button onclick="closeShopBox('${w.id}')">Cancel</button></div>
   </div>`;
 }
 
