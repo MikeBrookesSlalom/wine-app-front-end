@@ -44,8 +44,11 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 @media (prefers-reduced-motion:reduce){.card{animation:none}}
 .card.dragging{opacity:.95;box-shadow:0 20px 46px rgba(0,0,0,.55);z-index:20;cursor:grabbing;animation:none;transition:none}
 .card.removing{opacity:0;transform:translateX(48px) scale(.96);box-shadow:none;pointer-events:none}
-.card .draghint{position:absolute;top:10px;left:12px;font-size:15px;color:#B7A98C;letter-spacing:1px;line-height:1;display:none}
-.editing .draghint{display:block}
+.stylehead{font-family:'Fraunces',serif;font-size:19px;font-weight:600;color:var(--brass);margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid rgba(245,237,221,.15)}
+.stylehead:first-child{margin-top:4px}
+.stylehead span{font-family:'Work Sans',sans-serif;font-size:12px;font-weight:500;color:var(--cream-dim);margin-left:4px}
+.stylepick{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--meta)}
+.stylepick select{font-family:inherit;font-size:16px;padding:4px 8px;border-radius:6px;border:1px solid rgba(42,18,25,.3);background:#fff;color:var(--ink)}
 .remove{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:50%;border:1px solid var(--red);
   background:transparent;color:var(--red);font-size:18px;line-height:26px;display:none}
 .editing .remove{display:block}
@@ -711,104 +714,36 @@ function removeWine(id){
   }
 }
 
-// Long-press drag-to-reorder.
-// Bound once via delegation; suppresses page scroll only after the hold fires.
-function attachReorder(){
-  const container = document.getElementById("listView");
-  if(!container || container.dataset.reorderBound) return;
-  container.dataset.reorderBound = "1";
-
-  let card = null, holdTimer = null, dragging = false, startY = 0;
-
-  const endDrag = () => {
-    if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
-    if(dragging && card){
-      card.classList.remove("dragging");
-      card.style.transform = "";
-      document.body.style.overflow = "";
-      // rebuild order from the DOM
-      const ids = [...container.querySelectorAll(".card")].map(c => c.dataset.id);
-      const reordered = ids.map(id => state.wines.find(w => w.id === id)).filter(Boolean);
-      state.wines.forEach(w => { if(!reordered.includes(w)) reordered.push(w); });
-      persist({ ...state, wines: reordered });
-    }
-    dragging = false;
-    card = null;
-  };
-
-  const onDown = (clientY, target) => {
-    if(target.closest(".remove, a, button, input")) return;
-    const c = target.closest(".card");
-    if(!c || !container.contains(c)) return;
-    card = c;
-    startY = clientY;
-    holdTimer = setTimeout(() => {
-      holdTimer = null;
-      if(!card) return;
-      dragging = true;
-      card.classList.add("dragging");
-      document.body.style.overflow = "hidden"; // stop the page moving under us
-      if(navigator.vibrate) navigator.vibrate(15);
-    }, 300);
-  };
-
-  const onMove = (clientY, e) => {
-    if(!dragging){
-      // finger moved before the hold fired -> it's a scroll, let it go
-      if(holdTimer && Math.abs(clientY - startY) > 10){
-        clearTimeout(holdTimer); holdTimer = null; card = null;
-      }
-      return;
-    }
-    if(e && e.cancelable) e.preventDefault(); // this is what keeps the drag alive
-    card.style.transform = `translateY(${clientY - startY}px) scale(1.02)`;
-
-    // Only swap with the immediate neighbour, once our card's center passes
-    // that neighbour's midpoint — needs about half a card's height of movement,
-    // not a full card's height.
-    const rect = card.getBoundingClientRect();
-    const cardMid = rect.top + rect.height / 2;
-
-    let next = card.nextElementSibling;
-    while(next && !next.classList.contains("card")) next = next.nextElementSibling;
-    if(next){
-      const r = next.getBoundingClientRect();
-      if(cardMid > r.top + r.height / 2){
-        container.insertBefore(next, card); // card effectively moves down past it
-        startY = clientY;
-        card.style.transform = "translateY(0px) scale(1.02)";
-        return;
-      }
-    }
-
-    let prev = card.previousElementSibling;
-    while(prev && !prev.classList.contains("card")) prev = prev.previousElementSibling;
-    if(prev){
-      const r = prev.getBoundingClientRect();
-      if(cardMid < r.top + r.height / 2){
-        container.insertBefore(card, prev);
-        startY = clientY;
-        card.style.transform = "translateY(0px) scale(1.02)";
-        return;
-      }
-    }
-  };
-
-  // touch
-  container.addEventListener("touchstart", e => {
-    if(e.touches.length !== 1) return;
-    onDown(e.touches[0].clientY, e.target);
-  }, { passive: true });
-  container.addEventListener("touchmove", e => {
-    onMove(e.touches[0].clientY, e);
-  }, { passive: false });
-  container.addEventListener("touchend", endDrag);
-  container.addEventListener("touchcancel", endDrag);
-
-  // mouse (desktop)
-  container.addEventListener("mousedown", e => onDown(e.clientY, e.target));
-  document.addEventListener("mousemove", e => onMove(e.clientY, e));
-  document.addEventListener("mouseup", endDrag);
+// Wine style groups: the list is shown Rosé, White, Red (then any others),
+// cheapest best price first within each group.
+const STYLE_GROUPS = [["rose","Rosé"],["white","White"],["red","Red"],["sparkling","Sparkling"],["fortified","Fortified & sweet"],["other","Not sure yet"]];
+const plain = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function normStyle(st){
+  const t = plain(st);
+  if(/^ros/.test(t)) return "rose";
+  if(["white","red","sparkling","fortified"].includes(t)) return t;
+  return null;
+}
+// For wines added by name only: a best guess from the name and grape
+function guessStyle(text){
+  const t = plain(text);
+  if(/\bros(e|ado|ato)\b|blush|whispering angel|miraval|mirabeau|minuty|provence|white zinfandel/.test(t)) return "rose";
+  if(/champagne|prosecco|\bcava\b|cremant|sparkling|\bbrut\b|franciacorta|\bfizz/.test(t)) return "sparkling";
+  if(/\bport\b|sherry|madeira|marsala|sauternes|tokaji|\bfino\b|amontillado|oloroso/.test(t)) return "fortified";
+  if(/sauvignon blanc|chardonnay|pinot gri|riesling|albarin|chablis|viognier|chenin|gruner|picpoul|vermentino|\bgavi\b|soave|sancerre|muscadet|semillon|verdejo|godello|fiano|torrontes|gewurz|\bwhite\b|\bblanc\b|bianco|blanco|weiss/.test(t)) return "white";
+  if(/merlot|malbec|cabernet|shiraz|syrah|pinot noir|rioja|tempranillo|grenache|garnacha|primitivo|zinfandel|chianti|barolo|barbaresco|amarone|ripasso|valpolicella|claret|bordeaux|rhone|chateauneuf|beaujolais|montepulciano|nero d|carmenere|pinotage|sangiovese|nebbiolo|\bred\b|rouge|\btinto\b|rosso|douro|crozes|ribera|\bcotes du/.test(t)) return "red";
+  return null;
+}
+function styleOf(w){
+  return normStyle(w.style) || guessStyle(`${w.name} ${w.grape || ""} ${w.region || ""}`) || "other";
+}
+function setStyle(id, value){
+  persist({ ...state, wines: state.wines.map(w => w.id === id ? { ...w, style: value === "other" ? "" : value } : w) });
+  render();
+}
+function sortKey(w){
+  const best = bestOf(w);
+  return best ? best.effPrice : Infinity; // unpriced wines go to the bottom of their group
 }
 
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1004,7 +939,7 @@ function render(){
     return;
   }
 
-  main.innerHTML = state.wines.map(w => {
+  const card = w => {
     const best = bestOf(w);
     const list = (w.prices || []).filter(p => p.stocked && typeof p.price === "number");
     let rows;
@@ -1048,11 +983,11 @@ function render(){
     if(addingShop.has(w.id)) rows += shopBox(w);
 
     return `<article class="card${editMode ? " editing" : ""}" data-id="${w.id}">
-      <span class="draghint">⠿</span>
       <button class="remove" onclick="removeWine('${w.id}')">×</button>
       <div class="wtop">
         <h2 class="wname">${w.name}</h2>
         <div class="wmeta">${[w.producer,w.grape,w.region,w.country].filter(Boolean).join(" · ") || "Added manually"}</div>
+        ${editMode ? `<label class="stylepick">Style <select onchange="setStyle('${w.id}', this.value)">${STYLE_GROUPS.map(([k, l]) => `<option value="${k}"${styleOf(w) === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>` : ""}
         ${linksLine(w)}
       </div>
       ${best ? `<div class="besttag"><span class="bestlabel">Best price</span><span class="bestval">${gbp(best.effPrice)} <small>at ${best.retailer}${best.discounted ? " · with offer" : ""}</small></span></div>` : ""}
@@ -1066,9 +1001,16 @@ function render(){
         </span>
       </div>
     </article>`;
-  }).join("") + `<p class="footnote">Prices from Trolley.co.uk plus any shop links you've added (read straight from that shop's own page). Tap a store to open it. Greyed after 7 days.${state.wines.length > 1 ? " Tap and hold a card to drag it into a new order." : ""}</p>`;
+  };
 
-  attachReorder();
+  // Group by style, cheapest best price first within each group
+  const groups = STYLE_GROUPS.map(([key, label]) => ({ key, label,
+    wines: state.wines.filter(w => styleOf(w) === key)
+      .sort((a, b) => (sortKey(a) - sortKey(b)) || a.name.localeCompare(b.name)) }))
+    .filter(g => g.wines.length);
+  main.innerHTML = groups.map(g =>
+    `<h3 class="stylehead">${g.label} <span>${g.wines.length}</span></h3>` + g.wines.map(card).join("")
+  ).join("") + `<p class="footnote">Grouped by style, cheapest first within each group. Tap Edit to change a wine's style. Prices from Trolley.co.uk plus any shop links you've added (read straight from that shop's own page). Tap a store to open it. Greyed after 7 days.</p>`;
 }
 
 render();
