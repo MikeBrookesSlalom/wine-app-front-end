@@ -131,23 +131,16 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
     <div class="page">
     <div class="frame">
   <header>
-    <div class="eyebrow">UK supermarket tracker · v6.2 · self-hosted</div>
+    <div class="eyebrow">UK supermarket tracker · v8</div>
     <h1>Cellar Price Watch</h1>
     <div class="hmeta" id="hmeta"></div>
   </header>
 
-  <div class="config" id="configBox" style="display:none">
-    <label for="backendUrl">Backend URL</label>
-    <input id="backendUrl" type="text" placeholder="https://your-backend.railway.app" value="">
-    <div class="hint">The app already points at your server. Only change this if you move it.</div>
-    <div id="configStatus" style="margin-top:8px;font-size:11px;color:var(--brass)"></div>
-  </div>
 
   <div class="actions" id="listActions">
     <button class="btn primary" id="checkBtn" onclick="checkAllPrices()">Check prices</button>
     <button class="btn" onclick="showView('add')">+ Add wine</button>
     <button class="btn" id="editBtn" onclick="toggleEdit()">Edit</button>
-    <button class="btn" onclick="document.getElementById('configBox').style.display = document.getElementById('configBox').style.display==='none' ? 'block' : 'none'" title="Backend settings" style="padding:12px 14px">⚙</button>
   </div>
 
   <div id="checkStatus" style="display:none;font-size:13px;color:var(--cream-dim);margin:10px 0;"></div>
@@ -157,7 +150,7 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
   <main id="addView" class="hidden">
     <label class="addlabel" for="q">Search the wine list</label>
     <input class="search" id="q" placeholder="e.g. Oyster Bay Sauvignon Blanc" autocomplete="off">
-    <div class="hint">Instant matches from 441 popular UK supermarket wines — or add anything by name.</div>
+    <div class="hint">Instant matches from 200+ popular UK supermarket wines — or add anything by name.</div>
     <div id="matches"></div>
     <button class="btn" style="width:100%;margin-top:20px" onclick="showView('list')">Back to my wines</button>
   </main>
@@ -251,8 +244,7 @@ async function loadMonthlyPicks(force){
 
   view.innerHTML = `<div class="empty"><div class="glyph">◍</div><p>Fetching this month's picks…</p></div>`;
   try {
-    const url = (localStorage.getItem("backendUrl") || DEFAULT_BACKEND).trim();
-    const res = await fetch(url + "/wine-list");
+    const res = await fetch(API_BASE + "/api/wine-list");
     if(!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     localStorage.setItem(MONTHLY_CACHE_KEY, JSON.stringify({ data, at: Date.now() }));
@@ -570,8 +562,9 @@ const WINES = [
 
 let state = loadState();
 let editMode = false;
-const DEFAULT_BACKEND = "https://wine-backend-production-e7de.up.railway.app";
-let backendUrl = localStorage.getItem("backendUrl") || DEFAULT_BACKEND;
+// Front end and API now live in the same Vercel project, so calls are same-origin.
+const API_BASE = "";
+try { localStorage.removeItem("backendUrl"); } catch(e) {} // old Railway address, no longer used
 
 function loadState(){
   try{ const v = localStorage.getItem(STORAGE_KEY); if(v) return JSON.parse(v); }catch(e){}
@@ -800,24 +793,22 @@ function attachReorder(){
 }
 
 async function checkAllPrices(){
-  const url = (localStorage.getItem("backendUrl") || DEFAULT_BACKEND).trim();
-  if(!url){ alert("No backend URL configured"); return; }
   const btn = document.getElementById("checkBtn");
   const status = document.getElementById("checkStatus");
   btn.disabled = true;
+  status.classList.remove("error");
   status.style.display = "block";
-  status.textContent = "Fetching prices...";
-  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley...';
+  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley… newly added wines can take up to a minute.';
 
   try {
     const wines = state.wines.map(w => ({name: w.name, id: w.id}));
-    const res = await fetch(url.trim() + "/prices", {
+    const res = await fetch(API_BASE + "/api/prices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wines }),
     });
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
     // Map results back — keep whatever stores the backend returned, plus price context
     persist({
@@ -839,7 +830,7 @@ async function checkAllPrices(){
       }),
     });
 
-    status.textContent = `✓ Checked ${data.fetched} wines (${data.cached} from cache)`;
+    status.textContent = `✓ Updated ${data.fetched} wine${data.fetched === 1 ? "" : "s"}${data.cached ? ` (${data.cached} already checked in the last 24h)` : ""}`;
     setTimeout(() => { status.style.display = "none"; }, 3000);
     render();
   } catch(e){
@@ -915,23 +906,6 @@ function render(){
 
   attachReorder();
 }
-
-// Backend config UI (prefilled with the built-in default; editable via ⚙)
-document.getElementById("backendUrl").value = backendUrl;
-document.getElementById("backendUrl").addEventListener("change", e => {
-  backendUrl = e.target.value.trim();
-  const statusEl = document.getElementById("configStatus");
-  if(backendUrl){
-    localStorage.setItem("backendUrl", backendUrl);
-    statusEl.textContent = "✓ Saved";
-  } else {
-    // cleared -> fall back to the built-in default
-    localStorage.removeItem("backendUrl");
-    backendUrl = DEFAULT_BACKEND;
-    document.getElementById("backendUrl").value = DEFAULT_BACKEND;
-    statusEl.textContent = "Reset to default";
-  }
-});
 
 render();
 </script>

@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/prices.js": { "maxDuration": 300 },
+    "api/test.js": { "maxDuration": 120 },
+    "api/wine-list.js": { "maxDuration": 30 }
+  }
+}
