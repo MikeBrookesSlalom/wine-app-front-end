@@ -119,6 +119,19 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(245,237,221,.3);border-top-color:var(--brass);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .error{background:rgba(180,70,58,.2);border:1px solid var(--red);color:var(--red);border-radius:6px;padding:10px;margin:10px 0;font-size:13px}
+
+/* One-time Trolley link per wine */
+.linkbox{background:rgba(217,164,65,.12);border:1px dashed rgba(138,75,47,.45);border-radius:6px;padding:12px;margin-bottom:6px;font-size:13px;line-height:1.45}
+.linkbox .lbtitle{font-weight:600;margin-bottom:4px}
+.linkbox .lbsteps{color:var(--meta);margin-bottom:10px}
+.linkbox .findbtn{display:inline-block;background:var(--ink);color:var(--cream);text-decoration:none;font-weight:600;font-size:13px;border-radius:6px;padding:8px 12px;margin-bottom:10px}
+.linkbox .lbrow{display:flex;gap:6px}
+.linkbox input{flex:1;min-width:0;font-size:16px;padding:8px 10px;border-radius:6px;border:1px solid rgba(42,18,25,.3);background:#fff;color:var(--ink);
+  -webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.linkbox .savebtn{background:var(--brass);color:var(--ink);border:none;border-radius:6px;padding:8px 12px;font-weight:600;font-size:14px}
+.linkbox .lberr{color:var(--red);font-size:12px;margin-top:6px}
+.matched{font-size:11.5px;color:var(--meta);margin-top:4px}
+.matched button{background:none;border:none;color:#8A4B2F;text-decoration:underline;font-size:11.5px;padding:0 2px}
 </style>
 </head>
 <body>
@@ -131,7 +144,7 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
     <div class="page">
     <div class="frame">
   <header>
-    <div class="eyebrow">UK supermarket tracker · v8</div>
+    <div class="eyebrow">UK supermarket tracker · v9</div>
     <h1>Cellar Price Watch</h1>
     <div class="hmeta" id="hmeta"></div>
   </header>
@@ -323,10 +336,11 @@ const RETAILER_META = {
   "Lidl":        { dot:"#0050AA", url:q=>`https://www.lidl.co.uk/search?q=${encodeURIComponent(q)}` },
   "Co-op":       { dot:"#00A2E0", url:q=>`https://www.coop.co.uk/products/search?q=${encodeURIComponent(q)}` },
   "Iceland":     { dot:"#E4022D", url:q=>`https://www.iceland.co.uk/search?q=${encodeURIComponent(q)}` },
+  "Ocado":       { dot:"#4B1F6F", url:q=>`https://www.ocado.com/search?entry=${encodeURIComponent(q)}` },
   "Amazon":      { dot:"#FF9900", url:q=>`https://www.amazon.co.uk/s?k=${encodeURIComponent(q)}` },
 };
 // preferred display order; any unknown store falls through with a grey dot
-const RETAILER_ORDER = ["Tesco","Sainsbury's","ASDA","Waitrose","M&S","Morrisons","Aldi","Lidl","Co-op","Iceland","Amazon"];
+const RETAILER_ORDER = ["Tesco","Sainsbury's","ASDA","Waitrose","M&S","Ocado","Morrisons","Aldi","Lidl","Co-op","Iceland","Amazon"];
 function retailerMeta(key){ return RETAILER_META[key] || { dot:"#8A7A66", url:q=>`https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}` }; }
 const trolleyUrl = q => `https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}`;
 
@@ -792,16 +806,51 @@ function attachReorder(){
   document.addEventListener("mouseup", endDrag);
 }
 
-async function checkAllPrices(){
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// Trolley product link (or shared text containing one) or a bare code like JQK438
+function parseTrolleyRef(input){
+  const s = String(input || "").trim();
+  let m = s.match(/trolley\.co\.uk\/product\/([^\/\s?#]+)\/([A-Za-z0-9]+)/i);
+  if(m){ const sku = m[2].toUpperCase(); return { sku, url: `https://www.trolley.co.uk/product/${m[1].toLowerCase()}/${sku}` }; }
+  if(/^[A-Za-z]{3}\d{3}$/.test(s)){ const sku = s.toUpperCase(); return { sku, url: `https://www.trolley.co.uk/product/x/${sku}` }; }
+  return null;
+}
+
+const linkErrors = {};   // wine id -> message shown under its paste box
+const relinking = new Set(); // wine ids with the "change link" box open
+
+function startRelink(id){ relinking.add(id); render(); }
+function cancelRelink(id){ relinking.delete(id); delete linkErrors[id]; render(); }
+
+async function saveLink(id){
+  const input = document.getElementById("link-" + id);
+  const ref = parseTrolleyRef(input && input.value);
+  if(!ref){
+    linkErrors[id] = "That doesn't look like a Trolley product link. It should contain trolley.co.uk/product/…";
+    render();
+    return;
+  }
+  delete linkErrors[id];
+  relinking.delete(id);
+  persist({ ...state, wines: state.wines.map(w => w.id === id ? { ...w, trolley: ref, prices: null, checkedAt: null, context: null, matchedName: null, outOfStock: false } : w) });
+  render();
+  await checkPrices([id]); // check just this wine straight away so the match can be confirmed
+}
+
+function checkAllPrices(){ return checkPrices(null); }
+
+async function checkPrices(onlyIds){
   const btn = document.getElementById("checkBtn");
   const status = document.getElementById("checkStatus");
   btn.disabled = true;
   status.classList.remove("error");
   status.style.display = "block";
-  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley… newly added wines can take up to a minute.';
+  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley… this can take up to a minute.';
 
   try {
-    const wines = state.wines.map(w => ({name: w.name, id: w.id}));
+    const targets = state.wines.filter(w => !onlyIds || onlyIds.includes(w.id));
+    const wines = targets.map(w => ({ name: w.name, id: w.id, trolley: w.trolley ? w.trolley.url : undefined }));
     const res = await fetch(API_BASE + "/api/prices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -810,11 +859,15 @@ async function checkAllPrices(){
     const data = await res.json().catch(() => ({}));
     if(!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    // Map results back — keep whatever stores the backend returned, plus price context
+    const now = new Date().toISOString();
     persist({
       wines: state.wines.map(w => {
-        const entry = data.results[w.name];
-        if(!entry) return { ...w, prices: [], context: null, checkedAt: new Date().toISOString() };
+        if(onlyIds && !onlyIds.includes(w.id)) return w;
+        const entry = data.results && data.results[w.name];
+        if(!entry) return w;
+        const trolley = entry.link || w.trolley || null; // a link saved on another device comes back here
+        if(entry.needsLink) return { ...w, trolley: null, needsLink: true };
+        if(entry.error) return { ...w, trolley, needsLink: false, checkError: entry.error };
         const priceMap = entry.prices || {};
         const keys = Object.keys(priceMap);
         // order known retailers first, then any extras alphabetically
@@ -826,12 +879,17 @@ async function checkAllPrices(){
           return ia - ib;
         });
         const prices = keys.map(k => ({ retailer: k, ...priceMap[k] }));
-        return { ...w, prices, context: entry.context || null, checkedAt: new Date().toISOString() };
+        return { ...w, trolley, needsLink: false, checkError: null, matchedName: entry.matchedName || w.matchedName || null,
+          outOfStock: !!entry.outOfStock, prices, context: entry.context || null, checkedAt: now };
       }),
     });
 
-    status.textContent = `✓ Updated ${data.fetched} wine${data.fetched === 1 ? "" : "s"}${data.cached ? ` (${data.cached} already checked in the last 24h)` : ""}`;
-    setTimeout(() => { status.style.display = "none"; }, 3000);
+    const parts = [];
+    if(data.fetched || !data.cached) parts.push(`Updated ${data.fetched} wine${data.fetched === 1 ? "" : "s"}`);
+    if(data.cached) parts.push(`${data.cached} already checked in the last 24h`);
+    if(data.needLink) parts.push(`${data.needLink} still need${data.needLink === 1 ? "s" : ""} a Trolley link`);
+    status.textContent = "✓ " + parts.join(" · ");
+    setTimeout(() => { status.style.display = "none"; }, data.needLink ? 6000 : 3000);
     render();
   } catch(e){
     status.textContent = "Error: " + e.message;
@@ -841,10 +899,26 @@ async function checkAllPrices(){
   }
 }
 
+function linkBox(w){
+  const err = linkErrors[w.id];
+  const isChange = relinking.has(w.id) && w.trolley;
+  return `<div class="linkbox">
+    <div class="lbtitle">${isChange ? "Change the Trolley link" : "Link this wine to Trolley (one time only)"}</div>
+    <div class="lbsteps">Open Trolley, tap the right bottle (usually the 75cl one), then Share → Copy and paste the link here. After that its prices update automatically.</div>
+    <a class="findbtn" href="${trolleyUrl(w.name)}" target="_blank" rel="noopener">Find “${esc(w.name)}” on Trolley ↗</a>
+    <div class="lbrow">
+      <input id="link-${w.id}" type="url" inputmode="url" autocomplete="off" placeholder="Paste the Trolley link">
+      <button class="savebtn" onclick="saveLink('${w.id}')">Save</button>
+    </div>
+    ${err ? `<div class="lberr">${esc(err)}</div>` : ""}
+    ${isChange ? `<div class="matched" style="margin-top:8px"><button onclick="cancelRelink('${w.id}')">Cancel</button></div>` : ""}
+  </div>`;
+}
+
 function render(){
   const main = document.getElementById("listView");
   const hm = document.getElementById("hmeta");
-  const offers = state.wines.filter(w => (w.prices||[]).some(p => p.stocked && p.onOffer)).length;
+  const offers = state.wines.filter(w => (w.prices||[]).some(p => p.stocked && p.offer)).length;
   hm.innerHTML = state.wines.length
     ? `${state.wines.length} wine${state.wines.length>1?"s":""}${offers ? ` · <span style="color:var(--brass)">${offers} on offer</span>` : ""}`
     : "";
@@ -854,7 +928,7 @@ function render(){
       <div class="empty">
         <div class="glyph">◍</div>
         <h2>Your cellar list is empty</h2>
-        <p>Add the wines you love. Tap "Check prices" and prices fetch from Trolley.co.uk — no tokens, no API limits.</p>
+        <p>Add the wines you love, link each one to its Trolley.co.uk page once, then tap "Check prices" whenever you like.</p>
         <button class="btn primary" onclick="showView('add')">Add your first wine</button>
       </div>`;
     return;
@@ -864,8 +938,15 @@ function render(){
     const best = bestOf(w);
     const list = (w.prices || []).filter(p => p.stocked && typeof p.price === "number");
     let rows;
-    if(!w.checkedAt){
-      rows = `<div class="lrow notfound"><span class="lright" style="width:100%;text-align:center">Not checked yet</span></div>`;
+    const msg = t => `<div class="lrow notfound"><span class="lright" style="width:100%;text-align:center">${t}</span></div>`;
+    if(!w.trolley || relinking.has(w.id)){
+      rows = linkBox(w);
+    } else if(w.checkError){
+      rows = msg(esc(w.checkError));
+    } else if(!w.checkedAt){
+      rows = msg("Linked to Trolley · tap Check prices");
+    } else if(w.outOfStock){
+      rows = msg("Out of stock at every shop Trolley tracks right now");
     } else if(!list.length){
       rows = `<div class="lrow notfound"><span class="lright" style="width:100%;text-align:center">No supermarket price found</span></div>`;
     } else {
@@ -874,9 +955,9 @@ function render(){
         const isBest = best && best.retailer === p.retailer;
         const stale = w.checkedAt && daysAgo(w.checkedAt) > 7;
         return `<div class="lrow${isBest ? " best" : ""}${stale ? " stale" : ""}">
-          <a class="lret" href="${meta.url(w.name)}" target="_blank"><span class="dot" style="background:${meta.dot}"></span>${p.retailer}<span class="go">↗</span></a>
+          <a class="lret" href="${p.link || meta.url(w.name)}" target="_blank" rel="noopener"><span class="dot" style="background:${meta.dot}"></span>${p.retailer}<span class="go">↗</span></a>
           <span class="lright">
-            ${p.offer ? `<span class="age" style="color:#B0463A;font-weight:600">${p.offer}</span>` : ""}
+            ${p.offer ? `<span class="age" style="color:#B0463A;font-weight:600">${esc(p.offer)}</span>` : ""}
             <span class="age${stale ? " stale" : ""}">${ageLabel(w.checkedAt)}</span>
             <span class="price${isBest ? " b" : ""}">${gbp(p.price)}</span>
           </span>
@@ -890,6 +971,7 @@ function render(){
       <div class="wtop">
         <h2 class="wname">${w.name}</h2>
         <div class="wmeta">${[w.producer,w.grape,w.region,w.country].filter(Boolean).join(" · ") || "Added manually"}</div>
+        ${w.trolley && !relinking.has(w.id) ? `<div class="matched">Trolley: ${esc(w.matchedName || w.trolley.sku)} · <button onclick="startRelink('${w.id}')">change</button></div>` : ""}
       </div>
       ${best ? `<div class="besttag"><span class="bestlabel">Best price</span><span class="bestval">${gbp(best.effPrice)} <small>at ${best.retailer}${best.discounted ? " · with offer" : ""}</small></span></div>` : ""}
       ${w.context ? `<div class="ctxbadge ${w.context.label.includes("Higher") ? "bad" : "good"}">${w.context.label} <span class="ctxsource">· avg ${gbp(w.context.avg)}${w.context.basis === "own" ? " from your checks" : " (est.)"}</span></div>` : ""}
@@ -898,11 +980,11 @@ function render(){
         <span>Last checked: ${w.checkedAt ? ageLabel(w.checkedAt) : "never"}</span>
         <span style="display:flex;gap:14px">
           <a class="trolley" href="https://www.majestic.co.uk/search?q=${encodeURIComponent(w.name)}" target="_blank">Majestic ↗</a>
-          <a class="trolley" href="${trolleyUrl(w.name)}" target="_blank">Trolley ↗</a>
+          <a class="trolley" href="${w.trolley ? w.trolley.url : trolleyUrl(w.name)}" target="_blank" rel="noopener">Trolley ↗</a>
         </span>
       </div>
     </article>`;
-  }).join("") + `<p class="footnote">Live prices via Trolley.co.uk — shows the supermarkets Trolley lists for each wine (often the cheapest available). Tap a store to open its live search. Greyed after 7 days.${state.wines.length > 1 ? " Tap and hold a card to drag it into a new order." : ""}</p>`;
+  }).join("") + `<p class="footnote">Live prices via Trolley.co.uk — shows the supermarkets Trolley lists for each wine (often the cheapest available). Tap a store to open it. Greyed after 7 days.${state.wines.length > 1 ? " Tap and hold a card to drag it into a new order." : ""}</p>`;
 
   attachReorder();
 }

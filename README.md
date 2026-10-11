@@ -1,13 +1,13 @@
-# Cellar Price Watch (v8, all on Vercel)
+# Cellar Price Watch (v9, all on Vercel)
 
 One Vercel project now serves both the app and its API. No Railway.
 
 ```
 index.html          the app (unchanged features, now calls /api on the same site)
-api/prices.js       POST: live supermarket prices via Apify/Trolley
+api/prices.js       POST: supermarket prices via Apify (studio-amba~trolley-scraper)
 api/wine-list.js    GET:  this month's picks from Luke Flunder's list
 api/health.js       GET:  setup check
-api/test.js         GET:  troubleshooting, ?wine=Name (&debug=1)
+api/test.js         GET:  troubleshooting, ?link=<Trolley product link or code>
 lib/                shared code (matching, price context, storage, list parser)
 ```
 
@@ -33,19 +33,27 @@ lib/                shared code (matching, price context, storage, list parser)
    `"storage":"memory"` means no storage is connected; prices still work
    but history won't be kept.
 
-6. Open the app. The header should read **v8**. Tap Check prices.
+6. Open the app. The header should read **v9**. Tap Check prices.
+
+## How prices work
+
+Trolley.co.uk's robots.txt asks bots not to use its search, so the app doesn't search.
+Each wine is linked to its Trolley product page once: the card shows "Find on Trolley",
+you pick the right bottle in your browser, Share → Copy, paste, Save. The link is kept
+on the server and on your phone. From then on, Check prices runs one batched scraper
+job over all your linked wines.
 
 ## Running costs
 
 - Vercel Hobby (functions + Blob storage): £0 at this usage.
-- Apify (Trolley scraper): roughly 6p the first time a wine is added (one search),
-  then about half a penny per wine per price check. Prices are reused for 24 hours,
-  so tapping Check prices repeatedly costs nothing extra.
+- Apify: about $1.20 per 1,000 product checks, so roughly 0.1p per wine per check.
+  20 wines checked weekly is around 10 cents a month, well inside Apify's free $5 monthly credit.
+  Prices are reused for 24 hours, so tapping Check prices repeatedly costs nothing extra.
 
 ## Notes
 
-- Price history is now kept permanently (about a year of checks per wine), so the
+- Price history is kept permanently (about a year of checks per wine), so the
   "Lowest seen yet / Higher than usual" badges build up from your own checks.
-- Wines Trolley doesn't list are remembered as "not found" for a week, so they
-  aren't searched (and paid for) on every check.
-- Your wine list itself still lives in your phone's browser storage, not on the server.
+  Changing a wine's Trolley link starts its history afresh.
+- Your wine list itself lives in your phone's browser storage; Trolley links are also
+  saved on the server, so they come back if you check from another device.
