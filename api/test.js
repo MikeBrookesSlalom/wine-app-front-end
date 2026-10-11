@@ -2,6 +2,7 @@ import { runActor, pickBest, fetchPricesForIds } from "../lib/prices.js";
 
 // Troubleshooting: /api/test?wine=Whispering%20Angel  (add &debug=1 to see every search candidate)
 export default async function handler(req, res) {
+  const started = Date.now();
   try {
     const wine = String(req.query.wine || "Whispering Angel");
     const items = await runActor({ mode: "search", searchQuery: wine, sortOrder: "relevance", maxItems: 12 });
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
     const entry = (await fetchPricesForIds([best.productId]))[best.productId] || { prices: {} };
     res.status(200).json({ wine, matched: best.name, productId: best.productId, prices: entry.prices });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    // 200 on purpose: this is a diagnostic endpoint, so make the error readable anywhere
+    res.status(200).json({ ok: false, error: e.message, ms: Date.now() - started });
   }
 }
