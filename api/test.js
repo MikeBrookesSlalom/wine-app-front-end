@@ -4,6 +4,17 @@ import { runActor, pickBest, fetchPricesForIds } from "../lib/prices.js";
 export default async function handler(req, res) {
   const started = Date.now();
   try {
+    // Raw probe of the studio-amba scraper for one Trolley product URL: /api/test?amba=<url>
+    if (req.query.amba) {
+      const token = (process.env.APIFY_TOKEN || "").trim();
+      const r = await fetch(`https://api.apify.com/v2/acts/studio-amba~trolley-scraper/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productUrls: [String(req.query.amba)], maxResults: 1 }),
+      });
+      const text = await r.text();
+      return res.status(200).json({ ok: r.ok, status: r.status, ms: Date.now() - started, body: text.slice(0, 6000) });
+    }
     const wine = String(req.query.wine || "Whispering Angel");
     const items = await runActor({ mode: "search", searchQuery: wine, sortOrder: "relevance", maxItems: 12 });
     const best = pickBest(items, wine);
