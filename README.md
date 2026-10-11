@@ -7,7 +7,7 @@ index.html          the app (unchanged features, now calls /api on the same site
 api/prices.js       POST: supermarket prices read from Trolley.co.uk product pages
 api/wine-list.js    GET:  this month's picks from Luke Flunder's list
 api/health.js       GET:  setup check
-api/test.js         GET:  troubleshooting, ?link=<Trolley product link or code>
+api/test.js         GET:  troubleshooting, ?link=<Trolley link or code> or ?shop=<shop product link>
 lib/                shared code (matching, price context, storage, list parser)
 ```
 
@@ -43,6 +43,26 @@ Save. The link is kept on the server and on your phone. From then on, Check pric
 those product pages (3 at a time, at most once a day per wine) and pulls out each shop's
 price and offer. If a wine is out of stock everywhere, Trolley's suggested listings are
 offered as a one-tap swap.
+
+## Direct shop links (for wines Trolley misses)
+
+Each wine can also have product links from the shops themselves. Tap "+ shop link" on a
+card (or "Add a shop link instead" on a wine Trolley doesn't list), open the wine on the
+shop's site, Share → Copy, paste, Save. The price is then read from that shop's page on
+every check and replaces Trolley's figure for that shop.
+
+| Shop | Works | Offers picked up |
+|---|---|---|
+| Tesco | yes | Clubcard Price |
+| Sainsbury's | yes | Nectar / promotions |
+| ASDA | yes | (price only) |
+| Waitrose, Waitrose Cellar | yes | Waitrose promotions |
+| Ocado, Morrisons | yes | multibuys, More Card |
+| Costco | yes | (price only) |
+| Majestic, Co-op, The Whisky Exchange | no: bot walls block automated requests | |
+| Aldi, M&S | no: prices only appear in a browser | |
+
+Every check respects each site's robots.txt and runs from London (`regions: lhr1`).
 
 ## Running costs
 

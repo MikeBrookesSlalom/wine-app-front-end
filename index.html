@@ -95,7 +95,7 @@ h1{font-family:'Fraunces',serif;font-weight:600;font-size:34px;line-height:1.05;
 .hidden{display:none}
 
 /* Swipeable pager */
-#pager{max-width:460px;margin:0 auto;position:relative;overflow-x:hidden}
+#pager{max-width:460px;margin:0 auto;position:relative;overflow-x:hidden;overflow-x:clip}
 .tabbar{display:flex;gap:6px;padding:calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;max-width:460px;margin:0 auto}
 .tabbtn{flex:1;background:transparent;border:1px solid rgba(245,237,221,.25);color:var(--cream-dim);
   border-radius:10px;padding:10px 8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s ease}
@@ -213,6 +213,7 @@ function gotoPage(i){
 // swipe: passive listeners only, computed on release — never blocks scrolling, dragging, or taps
 (function attachPagerSwipe(){
   const pager = document.getElementById("pager");
+  pager.addEventListener("scroll", () => { if(pager.scrollLeft) pager.scrollLeft = 0; }); // paging uses transforms, never scroll
   let sx = 0, sy = 0, st = 0;
   pager.addEventListener("touchstart", e => {
     const t = e.touches[0];
@@ -337,10 +338,14 @@ const RETAILER_META = {
   "Co-op":       { dot:"#00A2E0", url:q=>`https://www.coop.co.uk/products/search?q=${encodeURIComponent(q)}` },
   "Iceland":     { dot:"#E4022D", url:q=>`https://www.iceland.co.uk/search?q=${encodeURIComponent(q)}` },
   "Ocado":       { dot:"#4B1F6F", url:q=>`https://www.ocado.com/search?entry=${encodeURIComponent(q)}` },
+  "Waitrose Cellar": { dot:"#5C7F6B", url:q=>`https://www.waitrosecellar.com/search?q=${encodeURIComponent(q)}` },
+  "Costco":      { dot:"#E31837", url:q=>`https://www.costco.co.uk/search?text=${encodeURIComponent(q)}` },
   "Amazon":      { dot:"#FF9900", url:q=>`https://www.amazon.co.uk/s?k=${encodeURIComponent(q)}` },
 };
 // preferred display order; any unknown store falls through with a grey dot
-const RETAILER_ORDER = ["Tesco","Sainsbury's","ASDA","Waitrose","M&S","Ocado","Morrisons","Aldi","Lidl","Co-op","Iceland","Amazon"];
+const RETAILER_ORDER = ["Tesco","Sainsbury's","ASDA","Waitrose","Waitrose Cellar","M&S","Ocado","Morrisons","Aldi","Lidl","Co-op","Iceland","Costco","Amazon"];
+// Shops whose own product pages the app can read (one link per wine, pasted once)
+const DIRECT_SHOPS = ["Tesco","Sainsbury's","ASDA","Waitrose","Waitrose Cellar","Ocado","Morrisons","Costco"];
 function retailerMeta(key){ return RETAILER_META[key] || { dot:"#8A7A66", url:q=>`https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}` }; }
 const trolleyUrl = q => `https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}`;
 
@@ -847,6 +852,30 @@ async function useAlternative(id, k){
   await checkPrices([id]);
 }
 
+const addingShop = new Set(); // wine ids with the "add shop link" box open
+const shopErrors = {};        // wine id -> message under that box
+
+function openShopBox(id){ addingShop.add(id); render(); const el = document.getElementById("shop-" + id); if(el) el.focus({ preventScroll: true }); }
+function closeShopBox(id){ addingShop.delete(id); delete shopErrors[id]; render(); }
+
+async function saveShopLink(id){
+  const input = document.getElementById("shop-" + id);
+  const m = String((input && input.value) || "").match(/https?:\/\/[^\s"'<>]+/i);
+  if(!m){ shopErrors[id] = "Paste the shop's product link (it starts with https://)."; render(); return; }
+  delete shopErrors[id];
+  addingShop.delete(id);
+  persist({ ...state, wines: state.wines.map(w => w.id === id ? { ...w, shops: [ ...(w.shops || []), { url: m[0] } ] } : w) });
+  render();
+  await checkPrices([id]); // the server checks the link and reads the price straight away
+  if(shopErrors[id]){ addingShop.add(id); render(); }
+}
+
+async function removeShop(id, idx){
+  persist({ ...state, wines: state.wines.map(w => w.id === id ? { ...w, shops: (w.shops || []).filter((_, k) => k !== idx) } : w) });
+  render();
+  await checkPrices([id]);
+}
+
 function checkAllPrices(){ return checkPrices(null); }
 
 async function checkPrices(onlyIds){
@@ -855,11 +884,13 @@ async function checkPrices(onlyIds){
   btn.disabled = true;
   status.classList.remove("error");
   status.style.display = "block";
-  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices from Trolley…';
+  status.innerHTML = '<span class="spinner" style="margin-right:6px"></span>Fetching prices…';
 
   try {
     const targets = state.wines.filter(w => !onlyIds || onlyIds.includes(w.id));
-    const wines = targets.map(w => ({ name: w.name, id: w.id, trolley: w.trolley ? w.trolley.url : undefined }));
+    const wines = targets.map(w => ({ name: w.name, id: w.id, trolley: w.trolley ? w.trolley.url : undefined,
+      shops: Array.isArray(w.shops) ? w.shops.map(x => x.url) : undefined }));
+    const sentShops = Object.fromEntries(wines.map(w => [w.id, JSON.stringify(w.shops || null)]));
     const res = await fetch(API_BASE + "/api/prices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -875,8 +906,11 @@ async function checkPrices(onlyIds){
         const entry = data.results && data.results[w.name];
         if(!entry) return w;
         const trolley = entry.link || w.trolley || null; // a link saved on another device comes back here
-        if(entry.needsLink) return { ...w, trolley: null, needsLink: true };
-        if(entry.error) return { ...w, trolley, needsLink: false, checkError: entry.error };
+        const changedSince = JSON.stringify(Array.isArray(w.shops) ? w.shops.map(x => x.url) : null) !== sentShops[w.id];
+        const shops = !changedSince && Array.isArray(entry.shops) ? entry.shops : (w.shops || []);
+        if((entry.rejectedShops || []).length) shopErrors[w.id] = entry.rejectedShops[0].error;
+        if(entry.needsLink) return { ...w, trolley: null, needsLink: true, shops, shopStatus: [] };
+        if(entry.error) return { ...w, trolley, shops, shopStatus: entry.shopStatus || [], needsLink: false, checkError: entry.error };
         const priceMap = entry.prices || {};
         const keys = Object.keys(priceMap);
         // order known retailers first, then any extras alphabetically
@@ -888,7 +922,7 @@ async function checkPrices(onlyIds){
           return ia - ib;
         });
         const prices = keys.map(k => ({ retailer: k, ...priceMap[k] }));
-        return { ...w, trolley, needsLink: false, checkError: null, matchedName: entry.matchedName || w.matchedName || null,
+        return { ...w, trolley, shops, shopStatus: entry.shopStatus || [], needsLink: false, checkError: null, matchedName: entry.matchedName || w.matchedName || null,
           outOfStock: !!entry.outOfStock, alternatives: entry.alternatives || [], prices, context: entry.context || null, checkedAt: now };
       }),
     });
@@ -896,7 +930,7 @@ async function checkPrices(onlyIds){
     const parts = [];
     if(data.fetched || !data.cached) parts.push(`Updated ${data.fetched} wine${data.fetched === 1 ? "" : "s"}`);
     if(data.cached) parts.push(`${data.cached} already checked in the last 24h`);
-    if(data.needLink) parts.push(`${data.needLink} still need${data.needLink === 1 ? "s" : ""} a Trolley link`);
+    if(data.needLink) parts.push(`${data.needLink} still need${data.needLink === 1 ? "s" : ""} a link`);
     status.textContent = "✓ " + parts.join(" · ");
     setTimeout(() => { status.style.display = "none"; }, data.needLink ? 6000 : 3000);
     render();
@@ -910,9 +944,9 @@ async function checkPrices(onlyIds){
 
 function linkBox(w){
   const err = linkErrors[w.id];
-  const isChange = relinking.has(w.id) && w.trolley;
+  const isChange = relinking.has(w.id);
   return `<div class="linkbox">
-    <div class="lbtitle">${isChange ? "Change the Trolley link" : "Link this wine to Trolley (one time only)"}</div>
+    <div class="lbtitle">${w.trolley ? "Change the Trolley link" : "Link this wine to Trolley (one time only)"}</div>
     <div class="lbsteps">Open Trolley, tap the right bottle (usually the 75cl one), then Share → Copy and paste the link here. After that its prices update automatically.</div>
     <a class="findbtn" href="${trolleyUrl(w.name)}" target="_blank" rel="noopener">Find “${esc(w.name)}” on Trolley ↗</a>
     <div class="lbrow">
@@ -920,8 +954,35 @@ function linkBox(w){
       <button class="savebtn" onclick="saveLink('${w.id}')">Save</button>
     </div>
     ${err ? `<div class="lberr">${esc(err)}</div>` : ""}
-    ${isChange ? `<div class="matched" style="margin-top:8px"><button onclick="cancelRelink('${w.id}')">Cancel</button></div>` : ""}
+    ${isChange ? `<div class="matched" style="margin-top:8px"><button onclick="cancelRelink('${w.id}')">Cancel</button></div>`
+      : `<div class="matched" style="margin-top:10px">Not on Trolley? <button onclick="openShopBox('${w.id}')">Add a shop link instead</button></div>`}
   </div>`;
+}
+
+function shopBox(w){
+  const err = shopErrors[w.id];
+  const searches = DIRECT_SHOPS.map(r => `<a href="${retailerMeta(r).url(w.name)}" target="_blank" rel="noopener">${esc(r)}</a>`).join(" · ");
+  return `<div class="linkbox" style="margin-top:8px">
+    <div class="lbtitle">Add a shop link</div>
+    <div class="lbsteps">Find the wine on one of these shops, open it, then Share → Copy and paste the link here. Its price is then read straight from the shop every check.<br>Search: ${searches}</div>
+    <div class="lbrow">
+      <input id="shop-${w.id}" type="url" inputmode="url" autocomplete="off" placeholder="Paste a shop's product link">
+      <button class="savebtn" onclick="saveShopLink('${w.id}')">Save</button>
+    </div>
+    ${err ? `<div class="lberr">${esc(err)}</div>` : ""}
+    <div class="matched" style="margin-top:8px">Majestic, Co-op, Aldi and M&amp;S can't be checked automatically. · <button onclick="closeShopBox('${w.id}')">Cancel</button></div>
+  </div>`;
+}
+
+function linksLine(w){
+  const shops = w.shops || [];
+  if(!w.trolley && !shops.length) return "";
+  const parts = [];
+  if(w.trolley && !relinking.has(w.id)) parts.push(`Trolley: ${esc(w.matchedName || w.trolley.sku)} · <button onclick="startRelink('${w.id}')">change</button>`);
+  else if(!w.trolley) parts.push(`Trolley: not linked · <button onclick="startRelink('${w.id}')">link</button>`);
+  const chips = shops.map((s, k) => `${esc(s.label || "Shop")}${editMode ? ` <button aria-label="Remove ${esc(s.label || "shop")} link" onclick="removeShop('${w.id}', ${k})">×</button>` : ""}`);
+  parts.push(`${chips.length ? `Shop links: ${chips.join(", ")} · ` : ""}<button onclick="openShopBox('${w.id}')">+ shop link</button>`);
+  return parts.map(p => `<div class="matched">${p}</div>`).join("");
 }
 
 function render(){
@@ -948,19 +1009,22 @@ function render(){
     const list = (w.prices || []).filter(p => p.stocked && typeof p.price === "number");
     let rows;
     const msg = t => `<div class="lrow notfound"><span class="lright" style="width:100%;text-align:center">${t}</span></div>`;
-    if(!w.trolley || relinking.has(w.id)){
+    const hasShops = (w.shops || []).length > 0;
+    if(!w.trolley && !hasShops && addingShop.has(w.id) && !relinking.has(w.id)){
+      rows = ""; // the shop box below replaces the Trolley box
+    } else if((!w.trolley && !hasShops) || relinking.has(w.id)){
       rows = linkBox(w);
     } else if(w.checkError){
       rows = msg(esc(w.checkError));
     } else if(!w.checkedAt){
-      rows = msg("Linked to Trolley · tap Check prices");
+      rows = msg("Linked · tap Check prices");
     } else if(w.outOfStock){
       rows = msg("Out of stock at every shop Trolley tracks right now") + ((w.alternatives || []).length ? `<div class="linkbox" style="margin-top:8px">
         <div class="lbtitle">Trolley suggests these listings instead</div>
         ${w.alternatives.map((a, k) => `<div class="lbrow" style="align-items:center;justify-content:space-between;margin-top:6px"><span>${esc(a.name)}</span><button class="savebtn" onclick="useAlternative('${w.id}', ${k})">Use this</button></div>`).join("")}
       </div>` : "");
     } else if(!list.length){
-      rows = `<div class="lrow notfound"><span class="lright" style="width:100%;text-align:center">No supermarket price found</span></div>`;
+      rows = msg(hasShops ? "Not in stock at your linked shops right now" : "No supermarket price found");
     } else {
       rows = list.map(p => {
         const meta = retailerMeta(p.retailer);
@@ -976,6 +1040,12 @@ function render(){
         </div>`;
       }).join("");
     }
+    // Linked shops that couldn't be read, or that are out of stock
+    if(w.checkedAt && !relinking.has(w.id)){
+      rows += (w.shopStatus || []).filter(st => !st.ok || st.inStock === false).map(st =>
+        `<div class="lrow notfound"><span class="lret"><span class="dot" style="background:${retailerMeta(st.label).dot}"></span>${esc(st.label)}</span><span class="lright"><span class="age">${st.ok ? "out of stock" : esc(st.error)}</span></span></div>`).join("");
+    }
+    if(addingShop.has(w.id)) rows += shopBox(w);
 
     return `<article class="card${editMode ? " editing" : ""}" data-id="${w.id}">
       <span class="draghint">⠿</span>
@@ -983,7 +1053,7 @@ function render(){
       <div class="wtop">
         <h2 class="wname">${w.name}</h2>
         <div class="wmeta">${[w.producer,w.grape,w.region,w.country].filter(Boolean).join(" · ") || "Added manually"}</div>
-        ${w.trolley && !relinking.has(w.id) ? `<div class="matched">Trolley: ${esc(w.matchedName || w.trolley.sku)} · <button onclick="startRelink('${w.id}')">change</button></div>` : ""}
+        ${linksLine(w)}
       </div>
       ${best ? `<div class="besttag"><span class="bestlabel">Best price</span><span class="bestval">${gbp(best.effPrice)} <small>at ${best.retailer}${best.discounted ? " · with offer" : ""}</small></span></div>` : ""}
       ${w.context ? `<div class="ctxbadge ${w.context.label.includes("Higher") ? "bad" : "good"}">${w.context.label} <span class="ctxsource">· avg ${gbp(w.context.avg)}${w.context.basis === "own" ? " from your checks" : " (est.)"}</span></div>` : ""}
@@ -996,7 +1066,7 @@ function render(){
         </span>
       </div>
     </article>`;
-  }).join("") + `<p class="footnote">Live prices via Trolley.co.uk — shows the supermarkets Trolley lists for each wine (often the cheapest available). Tap a store to open it. Greyed after 7 days.${state.wines.length > 1 ? " Tap and hold a card to drag it into a new order." : ""}</p>`;
+  }).join("") + `<p class="footnote">Prices from Trolley.co.uk plus any shop links you've added (read straight from that shop's own page). Tap a store to open it. Greyed after 7 days.${state.wines.length > 1 ? " Tap and hold a card to drag it into a new order." : ""}</p>`;
 
   attachReorder();
 }
