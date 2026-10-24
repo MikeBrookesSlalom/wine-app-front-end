@@ -1,5 +1,6 @@
 import { parseTrolleyRef, fetchProducts } from "../lib/prices.js";
 import { parseShopLink, fetchShopPrice } from "../lib/shops.js";
+import { majesticEnabled, majesticNameFromUrl, searchShopping, pickMajestic } from "../lib/majestic.js";
 
 // Troubleshooting:
 //   /api/test?link=<Trolley product link or code>   e.g. ?link=JQK438
@@ -7,6 +8,13 @@ import { parseShopLink, fetchShopPrice } from "../lib/shops.js";
 export default async function handler(req, res) {
   const started = Date.now();
   try {
+    if (req.query.majestic) { // /api/test?majestic=<wine name or Majestic link>  (uses one Google Shopping search)
+      if (!majesticEnabled()) return res.status(200).json({ ok: false, error: "SERPAPI_KEY is not set in Vercel" });
+      const name = majesticNameFromUrl(req.query.majestic) || String(req.query.majestic);
+      const results = await searchShopping(`${name} Majestic`);
+      const majesticResults = results.filter((r) => /majestic/i.test(String(r.source || ""))).map((r) => ({ title: r.title, price: r.extracted_price }));
+      return res.status(200).json({ ok: true, name, match: pickMajestic(results, name), majesticResults, totalResults: results.length, ms: Date.now() - started });
+    }
     if (req.query.shop64) req.query.shop = Buffer.from(String(req.query.shop64), "base64url").toString("utf8");
     if (req.query.shop) {
       const link = parseShopLink(req.query.shop);

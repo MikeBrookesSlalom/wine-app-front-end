@@ -60,8 +60,24 @@ every check and replaces Trolley's figure for that shop.
 | Costco | yes | (price only) |
 | Sainsbury's | no: refuses requests from cloud servers (Trolley still covers it) | |
 | Waitrose | no: never answers cloud servers (use Waitrose Cellar for wine) | |
-| Majestic, Co-op, The Whisky Exchange | no: bot walls block automated requests | |
+| Majestic | via Google Shopping (see below) | Was-price drops |
+| Co-op, The Whisky Exchange | no: bot walls block automated requests | |
 | Aldi, M&S | no: prices only appear in a browser | |
+
+## Majestic (via Google Shopping)
+
+Majestic's site turns away cloud servers, so its prices come from Google Shopping (UK)
+through SerpApi. Every wine is looked up automatically; the app keeps only a result sold
+by Majestic whose title contains every word of the wine's name (no magnums or halves
+unless the wine's name says so) and shows the matched listing on the card. Pasting a
+Majestic product link as a shop link pins the match to that bottle and makes the
+Majestic row open it.
+
+Setup: create a free account at serpapi.com (250 searches a month, no card), copy your
+API key, then in Vercel → Settings → Environment Variables add `SERPAPI_KEY` (Production)
+and redeploy. `/api/health` shows `"majestic": true` once it's set.
+Prices are cached for 24 hours, "not at Majestic" for a week, and a monthly counter stops
+at 230 searches so the free plan is never exceeded.
 
 Every check respects each site's robots.txt and runs from London (`regions: lhr1`).
 

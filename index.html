@@ -343,12 +343,13 @@ const RETAILER_META = {
   "Ocado":       { dot:"#4B1F6F", url:q=>`https://www.ocado.com/search?q=${encodeURIComponent(q)}` },
   "Waitrose Cellar": { dot:"#5C7F6B", url:q=>`https://www.waitrosecellar.com/shop/search?searchTerm=${encodeURIComponent(q)}` },
   "Costco":      { dot:"#E31837", url:q=>`https://www.costco.co.uk/search?text=${encodeURIComponent(q)}` },
+  "Majestic":    { dot:"#7A1F2B", url:q=>`https://www.majestic.co.uk/search?q=${encodeURIComponent(q)}` },
   "Amazon":      { dot:"#FF9900", url:q=>`https://www.amazon.co.uk/s?k=${encodeURIComponent(q)}` },
 };
 // preferred display order; any unknown store falls through with a grey dot
-const RETAILER_ORDER = ["Tesco","Sainsbury's","ASDA","Waitrose","Waitrose Cellar","M&S","Ocado","Morrisons","Aldi","Lidl","Co-op","Iceland","Costco","Amazon"];
+const RETAILER_ORDER = ["Majestic","Tesco","Sainsbury's","ASDA","Waitrose","Waitrose Cellar","M&S","Ocado","Morrisons","Aldi","Lidl","Co-op","Iceland","Costco","Amazon"];
 // Shops whose own product pages the app can read (one link per wine, pasted once)
-const DIRECT_SHOPS = ["Tesco","ASDA","Waitrose Cellar","Ocado","Morrisons","Costco"];
+const DIRECT_SHOPS = ["Majestic","Tesco","ASDA","Waitrose Cellar","Ocado","Morrisons","Costco"];
 function retailerMeta(key){ return RETAILER_META[key] || { dot:"#8A7A66", url:q=>`https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}` }; }
 const trolleyUrl = q => `https://www.trolley.co.uk/search/?q=${encodeURIComponent(q)}`;
 
@@ -857,7 +858,7 @@ async function checkPrices(onlyIds){
           return ia - ib;
         });
         const prices = keys.map(k => ({ retailer: k, ...priceMap[k] }));
-        return { ...w, trolley, shops, shopStatus: entry.shopStatus || [], needsLink: false, checkError: null, matchedName: entry.matchedName || w.matchedName || null,
+        return { ...w, trolley, shops, shopStatus: entry.shopStatus || [], majesticMatch: entry.majesticMatch || null, needsLink: false, checkError: null, matchedName: entry.matchedName || w.matchedName || null,
           outOfStock: !!entry.outOfStock, alternatives: entry.alternatives || [], prices, context: entry.context || null, checkedAt: now };
       }),
     });
@@ -905,18 +906,19 @@ function shopBox(w){
       <button class="savebtn" onclick="saveShopLink('${w.id}')">Save</button>
     </div>
     ${err ? `<div class="lberr">${esc(err)}</div>` : ""}
-    <div class="matched" style="margin-top:8px">Majestic, Sainsbury's, Waitrose (use Waitrose Cellar), Co-op, Aldi and M&amp;S block automatic checks, but Trolley still covers most of them. · <button onclick="closeShopBox('${w.id}')">Cancel</button></div>
+    <div class="matched" style="margin-top:8px">Majestic is matched automatically; add its link only to pin the exact bottle. Sainsbury's, Waitrose (use Waitrose Cellar), Co-op, Aldi and M&amp;S block automatic checks, but Trolley still covers most of them. · <button onclick="closeShopBox('${w.id}')">Cancel</button></div>
   </div>`;
 }
 
 function linksLine(w){
   const shops = w.shops || [];
-  if(!w.trolley && !shops.length) return "";
+  if(!w.trolley && !shops.length && !w.majesticMatch) return "";
   const parts = [];
   if(w.trolley && !relinking.has(w.id)) parts.push(`Trolley: ${esc(w.matchedName || w.trolley.sku)} · <button onclick="startRelink('${w.id}')">change</button>`);
   else if(!w.trolley) parts.push(`Trolley: not linked · <button onclick="startRelink('${w.id}')">link</button>`);
   const chips = shops.map((s, k) => `${esc(s.label || "Shop")}${editMode ? ` <button aria-label="Remove ${esc(s.label || "shop")} link" onclick="removeShop('${w.id}', ${k})">×</button>` : ""}`);
   parts.push(`${chips.length ? `Shop links: ${chips.join(", ")} · ` : ""}<button onclick="openShopBox('${w.id}')">+ shop link</button>`);
+  if(w.majesticMatch) parts.push(`Majestic match: ${esc(w.majesticMatch)}`);
   return parts.map(p => `<div class="matched">${p}</div>`).join("");
 }
 
@@ -947,7 +949,7 @@ function render(){
     const hasShops = (w.shops || []).length > 0;
     if(!w.trolley && !hasShops && addingShop.has(w.id) && !relinking.has(w.id)){
       rows = ""; // the shop box below replaces the Trolley box
-    } else if((!w.trolley && !hasShops) || relinking.has(w.id)){
+    } else if((!w.trolley && !hasShops && !(w.prices || []).length) || relinking.has(w.id)){
       rows = linkBox(w);
     } else if(w.checkError){
       rows = msg(esc(w.checkError));
