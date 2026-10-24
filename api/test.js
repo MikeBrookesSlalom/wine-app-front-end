@@ -1,6 +1,7 @@
 import { parseTrolleyRef, fetchProducts } from "../lib/prices.js";
 import { parseShopLink, fetchShopPrice } from "../lib/shops.js";
 import { majesticEnabled, majesticNameFromUrl, searchShopping, pickMajestic } from "../lib/majestic.js";
+import { majesticFeedEnabled, majesticFeedPrice } from "../lib/majesticFeed.js";
 
 // Troubleshooting:
 //   /api/test?link=<Trolley product link or code>   e.g. ?link=JQK438
@@ -8,6 +9,12 @@ import { majesticEnabled, majesticNameFromUrl, searchShopping, pickMajestic } fr
 export default async function handler(req, res) {
   const started = Date.now();
   try {
+    if (req.query.majesticfeed) { // /api/test?majesticfeed=<wine name or Majestic link>
+      if (!majesticFeedEnabled()) return res.status(200).json({ ok: false, error: "AWIN_MAJESTIC_FEED_URL is not set in Vercel" });
+      const isUrl = /majestic\.co\.uk/i.test(req.query.majesticfeed);
+      const hit = await majesticFeedPrice(isUrl ? "" : String(req.query.majesticfeed), isUrl ? String(req.query.majesticfeed) : undefined);
+      return res.status(200).json({ ok: true, match: hit, ms: Date.now() - started });
+    }
     if (req.query.majestic) { // /api/test?majestic=<wine name or Majestic link>  (uses one Google Shopping search)
       if (!(process.env.SERPAPI_KEY || "").trim()) return res.status(200).json({ ok: false, error: "SERPAPI_KEY is not set in Vercel" });
       const name = majesticNameFromUrl(req.query.majestic) || String(req.query.majestic);

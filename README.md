@@ -60,24 +60,34 @@ every check and replaces Trolley's figure for that shop.
 | Costco | yes | (price only) |
 | Sainsbury's | no: refuses requests from cloud servers (Trolley still covers it) | |
 | Waitrose | no: never answers cloud servers (use Waitrose Cellar for wine) | |
-| Majestic | via Google Shopping (see below) | Was-price drops |
+| Majestic | via its Awin product feed, once set up (see below) | Was-price drops |
 | Co-op, The Whisky Exchange | no: bot walls block automated requests | |
 | Aldi, M&S | no: prices only appear in a browser | |
 
-## Majestic (via Google Shopping)
+## Majestic (via Majestic's official Awin product feed)
 
-Majestic's site turns away cloud servers, so its prices come from Google Shopping (UK)
-through SerpApi. Every wine is looked up automatically; the app keeps only a result sold
-by Majestic whose title contains every word of the wine's name (no magnums or halves
-unless the wine's name says so) and shows the matched listing on the card. Pasting a
-Majestic product link as a shop link pins the match to that bottle and makes the
-Majestic row open it.
+Majestic's site turns away cloud servers, and a live test showed Majestic doesn't list
+its wines on Google Shopping either. The working route is Majestic's own product feed,
+which it publishes to affiliates on Awin (merchant 1546).
 
-Setup: create a free account at serpapi.com (250 searches a month, no card), copy your
-API key, then in Vercel → Settings → Environment Variables add `SERPAPI_KEY` (Production)
-and redeploy. `/api/health` shows `"majestic": true` once it's set.
-Prices are cached for 24 hours, "not at Majestic" for a week, and a monthly counter stops
-at 230 searches so the free plan is never exceeded.
+Setup (one-off):
+1. Join Awin as a publisher (awin.com → Publishers → Join; £5 refundable deposit; usually
+   reviewed within 24h). Give the app's address as your site and describe it as a
+   personal price-comparison page for wines.
+2. In Awin, search Advertisers for "Majestic" and apply to join its programme.
+3. Once accepted: Toolbox → Create-a-Feed → pick Majestic, format CSV, columns at least
+   product_name, search_price, rrp_price, merchant_deep_link, merchant_product_id,
+   merchant_name, in_stock → copy the feed URL.
+4. Vercel → Settings → Environment Variables → `AWIN_MAJESTIC_FEED_URL` (Production)
+   = that URL, then redeploy. `/api/health` then shows `"majestic": "awin feed"`.
+
+The catalogue is downloaded at most once a day and kept, so yesterday's prices are used if
+a download fails. Each wine is matched by its pasted Majestic link (exact), otherwise by
+name (every word must appear; no magnums or halves unless named). Was-prices show as
+"Was £X". Links in the app go straight to majestic.co.uk, not through affiliate tracking.
+
+(A Google Shopping route via SerpApi is also built but off: set `MAJESTIC_VIA_SHOPPING=1`
+with `SERPAPI_KEY` to try it again if Majestic starts listing there.)
 
 Every check respects each site's robots.txt and runs from London (`regions: lhr1`).
 
