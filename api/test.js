@@ -13,7 +13,19 @@ export default async function handler(req, res) {
       const name = majesticNameFromUrl(req.query.majestic) || String(req.query.majestic);
       const results = await searchShopping(`${name} Majestic`);
       const majesticResults = results.filter((r) => /majestic/i.test(String(r.source || ""))).map((r) => ({ title: r.title, price: r.extracted_price }));
-      return res.status(200).json({ ok: true, name, match: pickMajestic(results, name), majesticResults, totalResults: results.length, ms: Date.now() - started });
+      const sources = {};
+      for (const r of results) sources[r.source] = (sources[r.source] || 0) + 1;
+      let sellers = null;
+      if (req.query.deep) { // one more search: every seller of the top matching product
+        const top = results.find((r) => r.immersive_product_page_token && pickMajestic([{ ...r, source: "majestic" }], name));
+        if (top) {
+          const p = new URLSearchParams({ engine: "google_immersive_product", page_token: top.immersive_product_page_token, gl: "uk", hl: "en", api_key: (process.env.SERPAPI_KEY || "").trim() });
+          const j = await (await fetch(`https://serpapi.com/search.json?${p}`)).json();
+          const stores = (j.product_results && j.product_results.stores) || [];
+          sellers = { product: top.title, stores: stores.map((x) => ({ name: x.name, price: x.extracted_price ?? x.price, link: x.link })) };
+        }
+      }
+      return res.status(200).json({ ok: true, name, match: pickMajestic(results, name), majesticResults, sources, sellers, totalResults: results.length, ms: Date.now() - started });
     }
     if (req.query.shop64) req.query.shop = Buffer.from(String(req.query.shop64), "base64url").toString("utf8");
     if (req.query.shop) {
